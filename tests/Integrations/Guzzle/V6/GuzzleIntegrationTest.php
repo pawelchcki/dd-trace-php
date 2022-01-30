@@ -6,10 +6,7 @@ use DDTrace\Integrations\IntegrationsLoader;
 use DDTrace\Sampling\PrioritySampling;
 use DDTrace\Tracer;
 use GuzzleHttp\Client;
-use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\Handler\CurlMultiHandler;
-use GuzzleHttp\Promise;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use DDTrace\Tests\Common\SpanAssertion;
@@ -19,7 +16,6 @@ use DDTrace\Tests\Frameworks\Util\Request\GetSpec;
 
 class GuzzleIntegrationTest extends IntegrationTestCase
 {
-
     const URL = 'http://httpbin_integration';
 
     public static function ddSetUpBeforeClass()
@@ -43,9 +39,9 @@ class GuzzleIntegrationTest extends IntegrationTestCase
     protected function ddTearDown()
     {
         parent::ddTearDown();
-        putenv('DD_DISTRIBUTED_TRACING');
-        putenv('DD_TRACE_HTTP_CLIENT_SPLIT_BY_DOMAIN');
-        putenv('DD_DISTRIBUTED_TRACING');
+        self::putenv('DD_DISTRIBUTED_TRACING');
+        self::putenv('DD_TRACE_HTTP_CLIENT_SPLIT_BY_DOMAIN');
+        self::putenv('DD_DISTRIBUTED_TRACING');
     }
 
     /**
@@ -121,6 +117,23 @@ class GuzzleIntegrationTest extends IntegrationTestCase
         ]);
     }
 
+    public function testGetInlineCredentials()
+    {
+        $traces = $this->isolateTracer(function () {
+            $this->getMockedClient()->get('http://my_user:my_password@example.com');
+        });
+
+        $this->assertSpans($traces, [
+            SpanAssertion::build('GuzzleHttp\Client.transfer', 'guzzle', 'http', 'transfer')
+                ->setTraceAnalyticsCandidate()
+                ->withExactTags([
+                    'http.method' => 'GET',
+                    'http.url' => 'http://?:?@example.com',
+                    'http.status_code' => '200',
+                ]),
+        ]);
+    }
+
     public function testDistributedTracingIsPropagated()
     {
         $client = $this->getRealClient();
@@ -143,7 +156,7 @@ class GuzzleIntegrationTest extends IntegrationTestCase
         });
 
         // trace is: custom
-        self::assertSame($traces[0][0]['span_id'], (int) $found['headers']['X-Datadog-Trace-Id']);
+        self::assertSame($traces[0][0]['trace_id'], $found['headers']['X-Datadog-Trace-Id']);
 
         // parent is: curl_exec, used under the hood
         $curl_exec = null;
@@ -154,7 +167,7 @@ class GuzzleIntegrationTest extends IntegrationTestCase
             }
         }
         self::assertNotNull($curl_exec, 'Unable to find curl_exec in spans!');
-        self::assertSame($curl_exec['span_id'], (int) $found['headers']['X-Datadog-Parent-Id']);
+        self::assertSame($curl_exec['span_id'], $found['headers']['X-Datadog-Parent-Id']);
 
         self::assertSame('1', $found['headers']['X-Datadog-Sampling-Priority']);
         // existing headers are honored
@@ -163,7 +176,7 @@ class GuzzleIntegrationTest extends IntegrationTestCase
 
     public function testDistributedTracingIsNotPropagatedIfDisabled()
     {
-        putenv('DD_DISTRIBUTED_TRACING=false');
+        self::putenv('DD_DISTRIBUTED_TRACING=false');
         $client = $this->getRealClient();
         $found = [];
 
@@ -188,51 +201,29 @@ class GuzzleIntegrationTest extends IntegrationTestCase
     {
         $found = [];
 
-        $traces = $this->isolateTracer(function () use (&$found) {
-            /** @var Tracer $tracer */
-            $tracer = GlobalTracer::get();
-            $tracer->setPrioritySampling(PrioritySampling::AUTO_KEEP);
-            $span = $tracer->startActiveSpan('custom')->getSpan();
+        $traces = $this->inWebServer(
+            function ($execute) use (&$found) {
+                $found = json_decode($execute(GetSpec::create(
+                    __FUNCTION__,
+                    '/guzzle_in_distributed_web_request.php',
+                    [
+                    'x-datadog-sampling-priority: ' . PrioritySampling::AUTO_KEEP,
+                    ]
+                )), 1);
+            },
+            __DIR__ . '/guzzle_in_distributed_web_request.php'
+        );
 
-            $curl = new CurlMultiHandler();
-            $client = new Client([
-                'handler' => HandlerStack::create($curl)
-            ]);
-
-            $resolver = function (Response $response) use (&$found) {
-                $found[] = $response;
-            };
-
-            $promise1 = $client->getAsync(self::URL . '/headers', [
-                'headers' => [
-                    'honored' => 'preserved_value',
-                ],
-            ])->then($resolver);
-
-            $promise2 = $client->getAsync(self::URL . '/headers', [
-                'headers' => [
-                    'honored' => 'preserved_value',
-                ],
-            ])->then($resolver);
-
-            $aggregate = Promise\all([$promise1, $promise2]);
-            while (!Promise\is_settled($aggregate)) {
-                $curl->tick();
-            }
-
-            $span->finish();
-        });
-
-        $this->assertFlameGraph($traces, [
-            SpanAssertion::build('custom', 'cli', '', 'custom')
+        $this->assertOneSpan(
+            $traces,
+            SpanAssertion::forOperation('web.request')
                 ->withChildren([
                     SpanAssertion::exists('GuzzleHttp\Client.transfer'),
                     SpanAssertion::exists('GuzzleHttp\Client.transfer'),
-                ]),
-        ]);
+            ])
+        );
 
-        foreach ($found as $response) {
-            $data = json_decode($response->getBody(), 1);
+        foreach ($found as $data) {
             /*
              * Ideally the distributed traces for curl multi would be children
              * of the GuzzleHttp\Client.transfer span, but we do not currently
@@ -244,11 +235,11 @@ class GuzzleIntegrationTest extends IntegrationTestCase
             $rootSpan = $traces[0][0];
             self::assertSame(
                 $rootSpan['span_id'],
-                (int) $data['headers']['X-Datadog-Parent-Id']
+                $data['headers']['X-Datadog-Parent-Id']
             );
             self::assertSame(
                 $rootSpan['trace_id'],
-                (int) $data['headers']['X-Datadog-Trace-Id']
+                $data['headers']['X-Datadog-Trace-Id']
             );
             self::assertSame(
                 (float) $rootSpan['metrics']['_sampling_priority_v1'],
@@ -279,7 +270,7 @@ class GuzzleIntegrationTest extends IntegrationTestCase
             /** @var Tracer $tracer */
             $tracer = GlobalTracer::get();
             $tracer->setPrioritySampling(PrioritySampling::AUTO_KEEP);
-            $span = $tracer->startActiveSpan('custom')->getSpan();
+            $span = $tracer->startRootSpan('custom')->getSpan();
 
             $response = $client->get(self::URL . '/headers', [
                 'headers' => [
@@ -292,8 +283,8 @@ class GuzzleIntegrationTest extends IntegrationTestCase
         });
 
         // trace is: custom
-        self::assertSame($traces[0][0]['span_id'], (int) $found['headers']['X-Datadog-Trace-Id']);
-        self::assertSame($traces[0][0]['span_id'], (int) $found['headers']['X-Datadog-Parent-Id']);
+        self::assertSame($traces[0][0]['trace_id'], $found['headers']['X-Datadog-Trace-Id']);
+        self::assertSame($traces[0][0]['span_id'], $found['headers']['X-Datadog-Parent-Id']);
         self::assertEquals(1, sizeof($traces[0]));
 
         self::assertSame('1', $found['headers']['X-Datadog-Sampling-Priority']);
@@ -303,7 +294,7 @@ class GuzzleIntegrationTest extends IntegrationTestCase
 
     public function testAppendHostnameToServiceName()
     {
-        putenv('DD_TRACE_HTTP_CLIENT_SPLIT_BY_DOMAIN=true');
+        self::putenv('DD_TRACE_HTTP_CLIENT_SPLIT_BY_DOMAIN=true');
 
         $traces = $this->isolateTracer(function () {
             $this->getMockedClient()->get('http://example.com');
@@ -314,6 +305,24 @@ class GuzzleIntegrationTest extends IntegrationTestCase
                 ->withExactTags([
                     'http.method' => 'GET',
                     'http.url' => 'http://example.com',
+                    'http.status_code' => '200',
+                ]),
+        ]);
+    }
+
+    public function testAppendHostnameToServiceNameInlineCredentials()
+    {
+        self::putenv('DD_TRACE_HTTP_CLIENT_SPLIT_BY_DOMAIN=true');
+
+        $traces = $this->isolateTracer(function () {
+            $this->getMockedClient()->get('http://my_user:my_password@example.com');
+        });
+        $this->assertSpans($traces, [
+            SpanAssertion::build('GuzzleHttp\Client.transfer', 'host-example.com', 'http', 'transfer')
+                ->setTraceAnalyticsCandidate()
+                ->withExactTags([
+                    'http.method' => 'GET',
+                    'http.url' => 'http://?:?@example.com',
                     'http.status_code' => '200',
                 ]),
         ]);

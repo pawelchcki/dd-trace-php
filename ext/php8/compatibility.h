@@ -15,13 +15,6 @@
 #endif
 #endif
 
-/* BC only */
-#define TSRMLS_D void
-#define TSRMLS_DC
-#define TSRMLS_C
-#define TSRMLS_CC
-#define TSRMLS_FETCH()
-
 #define UNUSED_1(x) (void)(x)
 #define UNUSED_2(x, y) \
     do {               \
@@ -53,9 +46,24 @@
 #define UNUSED(...) _GET_UNUSED_MACRO_OF_ARITY(__VA_ARGS__, 5, 4, 3, 2, 1)(__VA_ARGS__)
 
 #define COMPAT_RETVAL_STRING(c) RETVAL_STRING(c)
-#define ZVAL_VARARG_PARAM(list, arg_num) (&(((zval*)list)[arg_num]))
+#define ZVAL_VARARG_PARAM(list, arg_num) (&(((zval *)list)[arg_num]))
 #define IS_TRUE_P(x) (Z_TYPE_P(x) == IS_TRUE)
 
-typedef zend_object ddtrace_exception_t;
+#define zend_weakrefs_hash_add zend_weakrefs_hash_add_fallback
+#define zend_weakrefs_hash_del zend_weakrefs_hash_del_fallback
+#define zend_weakrefs_hash_add_ptr zend_weakrefs_hash_add_ptr_fallback
+
+zval *zend_weakrefs_hash_add(HashTable *ht, zend_object *key, zval *pData);
+zend_result zend_weakrefs_hash_del(HashTable *ht, zend_object *key);
+
+static zend_always_inline void *zend_weakrefs_hash_add_ptr(HashTable *ht, zend_object *key, void *ptr) {
+    zval tmp, *zv;
+    ZVAL_PTR(&tmp, ptr);
+    if ((zv = zend_weakrefs_hash_add(ht, key, &tmp))) {
+        return Z_PTR_P(zv);
+    } else {
+        return NULL;
+    }
+}
 
 #endif  // DD_COMPATIBILITY_H

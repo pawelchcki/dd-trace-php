@@ -26,3 +26,4 @@ greet('Datadog');
 greet hooked.
 %s in ddtrace's closure for greet(): Undefined variable%sthis_normally_raises_an_%s
 Hello, Datadog.
+Successfully triggered flush with trace of size 1

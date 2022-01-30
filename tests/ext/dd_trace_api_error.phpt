@@ -15,10 +15,10 @@ var_dump(dd_trace('foo', [
     'instrument_when_limited' => 'foo',
 ]));
 var_dump(dd_trace('foo', [
-    'innerhook' => 'foo',
+    'prehook' => 'foo',
 ]));
 var_dump(dd_trace('foo', [
-    'innerhook' => new stdClass(),
+    'prehook' => new stdClass(),
 ]));
 var_dump(dd_trace('foo', [
     'posthook' => function () {},
@@ -36,15 +36,16 @@ var_dump(dd_trace('foo', 'foo', [
     'instrument_when_limited' => 'foo',
 ]));
 var_dump(dd_trace('foo', 'foo', [
-    'innerhook' => 'foo',
+    'prehook' => 'foo',
 ]));
 var_dump(dd_trace('foo', 'foo', [
-    'innerhook' => new stdClass(),
+    'prehook' => new stdClass(),
 ]));
 var_dump(dd_trace('foo', 'foo', [
     'posthook' => function () {},
 ]));
 var_dump(dd_trace('foo', 'foo', []));
+
 ?>
 --EXPECT--
 Unexpected parameter combination, expected (class, function, closure | config_array) or (function, closure | config_array)
@@ -66,3 +67,4 @@ bool(false)
 bool(false)
 bool(false)
 bool(false)
+Successfully triggered flush with trace of size 1

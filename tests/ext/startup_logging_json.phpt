@@ -1,5 +1,7 @@
 --TEST--
 Startup logging from JSON fetched at runtime
+--INI--
+datadog.trace.request_init_hook=
 --FILE--
 <?php
 include_once 'startup_logging.inc';
@@ -24,16 +26,16 @@ enabled_cli: %s
 agent_url: "%s"
 debug: false
 analytics_enabled: false
-sample_rate: 1.0000
-sampling_rules: null
-tags: null
-service_mapping: null
+sample_rate: 1
+sampling_rules: []
+tags: []
+service_mapping: []
 distributed_tracing_enabled: true
 priority_sampling_enabled: true
 dd_version: null
 architecture: "%s"
 sapi: "cli"
-ddtrace.request_init_hook: null
+datadog.trace.request_init_hook: null
 open_basedir_configured: false
 uri_fragment_regex: null
 uri_mapping_incoming: null
@@ -45,7 +47,7 @@ measure_compile_time: true
 report_hostname_on_root_span: false
 traced_internal_functions: null
 auto_prepend_file_configured: false
-integrations_disabled: null
+integrations_disabled: "default"
 enabled_from_env: true
 opcache.file_cache: null
-ddtrace.request_init_hook_reachable: false
+datadog.trace.request_init_hook_reachable: false

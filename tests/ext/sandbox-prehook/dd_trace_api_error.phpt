@@ -33,3 +33,4 @@ Expected 'prehook' to be an instance of Closure
 bool(false)
 Expected 'prehook' to be an instance of Closure
 bool(false)
+Successfully triggered flush with trace of size 1

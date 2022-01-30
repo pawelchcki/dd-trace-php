@@ -4,9 +4,11 @@ namespace DDTrace\Tests\OpenTracerUnit;
 
 use DDTrace\OpenTracer\Span;
 use DDTrace\Span as DDSpan;
+use DDTrace\SpanData;
 use DDTrace\SpanContext as DDSpanContext;
 use DDTrace\Tag;
 use DDTrace\Tests\Common\BaseTestCase;
+use DDTrace\Time;
 use Exception;
 
 final class SpanTest extends BaseTestCase
@@ -155,12 +157,11 @@ final class SpanTest extends BaseTestCase
 
     private function createSpan()
     {
-        $span = new DDSpan(
-            self::OPERATION_NAME,
-            DDSpanContext::createAsRoot(),
-            self::SERVICE,
-            self::RESOURCE
-        );
+        $spanData = \DDTrace\start_span();
+        $spanData->name = self::OPERATION_NAME;
+        $spanData->service = self::SERVICE;
+        $spanData->resource = self::RESOURCE;
+        $span = new DDSpan($spanData, DDSpanContext::createAsRoot());
         return new Span($span);
     }
 }

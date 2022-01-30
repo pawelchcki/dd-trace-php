@@ -3,6 +3,7 @@
 namespace DDTrace\OpenTracer;
 
 use DDTrace\Contracts\Tracer as TracerInterface;
+use DDTrace\GlobalTracer;
 use DDTrace\Propagator;
 use DDTrace\Tracer as DDTracer;
 use DDTrace\Transport;
@@ -27,7 +28,7 @@ final class Tracer implements OTTracer
      */
     public function __construct(TracerInterface $tracer = null)
     {
-        $this->tracer = $tracer ?: self::make();
+        $this->tracer = $tracer ?: GlobalTracer::get();
     }
 
     /**
@@ -58,7 +59,10 @@ final class Tracer implements OTTracer
         }
 
         $options['finish_span_on_close'] = $obj->shouldFinishSpanOnClose();
-        $options['ignore_active_span'] = $obj->shouldIgnoreActiveSpan();
+        if (\method_exists($obj, 'shouldIgnoreActiveSpan')) {
+            // This method (and the 'ignore_active_span' concept) has been added in opentracing 1.0.0-beta6.
+            $options['ignore_active_span'] = $obj->shouldIgnoreActiveSpan();
+        }
 
         /* Later: finish supporting OpenTracing\References
         $references = $obj->getReferences();

@@ -42,3 +42,4 @@ namespace
 autoload_attempted
 PUBLIC STATIC METHOD
 PUBLIC STATIC METHOD
+Successfully triggered flush with trace of size 1

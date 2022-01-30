@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "env_config.h"
 #include "ext/version.h"
 #include "random.h"
 
@@ -14,23 +13,50 @@ extern zend_class_entry *ddtrace_ce_fatal_error;
 
 typedef struct ddtrace_span_ids_t ddtrace_span_ids_t;
 typedef struct ddtrace_span_fci ddtrace_span_fci;
+typedef struct ddtrace_span_t ddtrace_span_t;
 
-BOOL_T ddtrace_tracer_is_limited(TSRMLS_D);
+zval *ddtrace_spandata_property_name(ddtrace_span_t *span);
+zval **ddtrace_spandata_property_name_write(ddtrace_span_t *span);
+zval *ddtrace_spandata_property_resource(ddtrace_span_t *span);
+zval **ddtrace_spandata_property_resource_write(ddtrace_span_t *span);
+zval *ddtrace_spandata_property_service(ddtrace_span_t *span);
+zval **ddtrace_spandata_property_service_write(ddtrace_span_t *span);
+zval *ddtrace_spandata_property_type(ddtrace_span_t *span);
+zval **ddtrace_spandata_property_type_write(ddtrace_span_t *span);
+zval *ddtrace_spandata_property_meta(ddtrace_span_t *span);
+zval *ddtrace_spandata_property_metrics(ddtrace_span_t *span);
+zval *ddtrace_spandata_property_exception(ddtrace_span_t *span);
+zval **ddtrace_spandata_property_exception_write(ddtrace_span_t *span);
+zval *ddtrace_spandata_property_parent(ddtrace_span_t *span);
+zval **ddtrace_spandata_property_parent_write(ddtrace_span_t *span);
+
+bool ddtrace_tracer_is_limited(TSRMLS_D);
+// prepare the tracer state to start handling a new trace
+void dd_prepare_for_new_trace(TSRMLS_D);
+void ddtrace_disable_tracing_in_current_request(void);
+bool ddtrace_alter_dd_trace_disabled_config(zval *old_value, zval *new_value);
+
+typedef struct {
+    int type;
+    zval *message;
+} ddtrace_error_data;
 
 // clang-format off
 ZEND_BEGIN_MODULE_GLOBALS(ddtrace)
     char *auto_prepend_file;
-    zend_bool disable;
-    zend_bool disable_in_current_request;
-    char *request_init_hook;
+    uint8_t disable; // 0 = enabled, 1 = disabled via INI, 2 = disabled, but MINIT was fully executed
     zend_bool request_init_hook_loaded;
 
     uint32_t traces_group_id;
     HashTable *class_lookup;
     HashTable *function_lookup;
     zval additional_trace_meta; // IS_ARRAY
+    HashTable additional_global_tags;
+    HashTable root_span_tags_preset;
+    HashTable propagated_root_span_tags;
     zend_bool log_backtrace;
     zend_bool backtrace_handler_already_run;
+    ddtrace_error_data active_error;
     dogstatsd_client dogstatsd_client;
     char *dogstatsd_host;
     char *dogstatsd_port;
@@ -51,16 +77,21 @@ ZEND_BEGIN_MODULE_GLOBALS(ddtrace)
      * A 16-bit call depth would allow us to count to 65,535, which is way more
      * than necessary. An 8-bit depth would be inadequate (255).
      */
-    bool should_warn_call_depth;
+    bool has_warned_call_depth;
     uint16_t call_depth;
 
     uint64_t trace_id;
+    long default_priority_sampling;
+    long propagated_priority_sampling;
     ddtrace_span_ids_t *span_ids_top;
     ddtrace_span_fci *open_spans_top;
     ddtrace_span_fci *closed_spans_top;
+    ddtrace_span_fci *root_span;
     uint32_t open_spans_count;
     uint32_t closed_spans_count;
     int64_t compile_time_microseconds;
+    uint64_t distributed_parent_trace_id;
+    char *dd_origin;
 
     char *cgroup_file;
 ZEND_END_MODULE_GLOBALS(ddtrace)

@@ -8,6 +8,7 @@ composer.lock
 .libs
 .deps
 .phpunit.result.cache
+.tmp/
 **.code-workspace
 /Makefile*
 acinclude.m4
@@ -15,6 +16,7 @@ aclocal.m4
 autom4te*
 build
 configure
+coverage/
 /configure.*
 /config.*
 *.la

@@ -21,7 +21,7 @@ extern inline void ddtrace_dispatch_release(ddtrace_dispatch_t *dispatch);
 
 static bool dd_try_find_function_dispatch(HashTable *ht, zval *fname, ddtrace_dispatch_t **dispatch_ptr,
                                           HashTable **function_table) {
-    ddtrace_dispatch_t *dispatch = ddtrace_hash_find_ptr_lc(ht, Z_STRVAL_P(fname), Z_STRLEN_P(fname));
+    ddtrace_dispatch_t *dispatch = ddtrace_hash_find_ptr_lc(ht, Z_STRVAL_P(fname), Z_STRLEN_P(fname) + 1);
     if (dispatch) {
         *dispatch_ptr = dispatch;
         *function_table = ht;
@@ -39,7 +39,7 @@ static bool dd_try_find_method_dispatch(zend_class_entry *class, zval *fname, dd
     const char *class_name = class->name;
     size_t class_name_length = class->name_length;
 
-    class_lookup = ddtrace_hash_find_ptr_lc(DDTRACE_G(class_lookup), class_name, class_name_length);
+    class_lookup = ddtrace_hash_find_ptr_lc(DDTRACE_G(class_lookup), class_name, class_name_length + 1);
     if (class_lookup) {
         if (dd_try_find_function_dispatch(class_lookup, fname, dispatch_ptr, function_table)) {
             return true;
@@ -114,7 +114,7 @@ static HashTable *_get_lookup_for_target(zval *class_name TSRMLS_DC) {
         ZVAL_STRINGL(class_name, Z_STRVAL_P(class_name_prev), Z_STRLEN_P(class_name_prev), 1);
         ddtrace_downcase_zval(class_name);
         overridable_lookup =
-            ddtrace_hash_find_ptr(DDTRACE_G(class_lookup), Z_STRVAL_P(class_name), Z_STRLEN_P(class_name));
+            ddtrace_hash_find_ptr(DDTRACE_G(class_lookup), Z_STRVAL_P(class_name), Z_STRLEN_P(class_name) + 1);
         if (!overridable_lookup) {
             overridable_lookup = ddtrace_new_class_lookup(class_name TSRMLS_CC);
         }
@@ -130,7 +130,7 @@ static HashTable *_get_lookup_for_target(zval *class_name TSRMLS_DC) {
 zend_bool ddtrace_trace(zval *class_name, zval *function_name, zval *callable, uint32_t options TSRMLS_DC) {
     HashTable *overridable_lookup = _get_lookup_for_target(class_name TSRMLS_CC);
     if (overridable_lookup == NULL) {
-        return FALSE;
+        return false;
     }
 
     ddtrace_dispatch_t dispatch;
@@ -147,10 +147,10 @@ zend_bool ddtrace_trace(zval *class_name, zval *function_name, zval *callable, u
     dispatch.options = options;
 
     if (ddtrace_dispatch_store(overridable_lookup, &dispatch)) {
-        return TRUE;
+        return true;
     } else {
         ddtrace_dispatch_dtor(&dispatch);
-        return FALSE;
+        return false;
     }
 }
 
@@ -177,7 +177,7 @@ zend_bool ddtrace_hook_callable(ddtrace_string class_name, ddtrace_string functi
     } else {
         overridable_lookup = _get_lookup_for_target(NULL TSRMLS_CC);
     }
-    zend_bool dispatch_stored = FALSE;
+    zend_bool dispatch_stored = false;
     if (overridable_lookup) {
         dispatch_stored = ddtrace_dispatch_store(overridable_lookup, &dispatch);
     }

@@ -8,6 +8,12 @@
 ZEND_EXTERN_MODULE_GLOBALS(ddtrace);
 
 bool ddtrace_send_traces_via_thread(size_t num_traces, char *payload, size_t payload_len TSRMLS_DC) {
+    if (!get_DD_TRACE_ENABLED()) {
+        // If the tracer is set to drop all the spans, we do not signal an error.
+        ddtrace_log_debugf("Traces are dropped by PID %ld because tracing is disabled.", getpid());
+        return true;
+    }
+
     if (num_traces != 1) {
         // The background sender is capable of sending exactly one trace atm
         return false;

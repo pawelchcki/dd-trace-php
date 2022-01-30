@@ -2,8 +2,6 @@
 
 namespace DDTrace\Integrations\Guzzle;
 
-use DDTrace\Format;
-use DDTrace\GlobalTracer;
 use DDTrace\Http\Urls;
 use DDTrace\Integrations\Integration;
 use DDTrace\SpanData;
@@ -13,7 +11,6 @@ use GuzzleHttp;
 
 class GuzzleIntegration extends Integration
 {
-
     const NAME = 'guzzle';
 
     public function getName()
@@ -27,41 +24,12 @@ class GuzzleIntegration extends Integration
             return Integration::NOT_LOADED;
         }
 
-        $tracer = GlobalTracer::get();
-        $rootScope = $tracer->getRootScope();
-        if (!$rootScope) {
+        $rootSpan = \DDTrace\root_span();
+        if (!$rootSpan) {
             return Integration::NOT_LOADED;
         }
 
         $integration = $this;
-
-        if (\PHP_VERSION_ID < 50500) {
-            \DDTrace\hook_method(
-                'GuzzleHttp\\Client',
-                '__construct',
-                null,
-                function (GuzzleHttp\Client $client, $s, $a) {
-                    if (!\method_exists($client, 'getEmitter')) {
-                        // must not be Guzzle 5
-                        return;
-                    }
-                    $emitter = $client->getEmitter();
-                    $emitter->once('before', function (GuzzleHttp\Event\EventInterface $event) {
-                        if (!$event instanceof GuzzleHttp\Event\AbstractRequestEvent) {
-                            return;
-                        }
-                        if (!\ddtrace_config_distributed_tracing_enabled()) {
-                            return;
-                        }
-                        /** @var GuzzleHttp\Event\AbstractRequestEvent $event */
-                        $request = $event->getRequest();
-                        $headers = [];
-                        \DDTrace\Bridge\inject_distributed_tracing_headers(Format::TEXT_MAP, $headers);
-                        $request->addHeaders($headers);
-                    });
-                }
-            );
-        }
 
         /* Until we support both pre- and post- hooks on the same function, do
          * not send distributed tracing headers; curl will almost guaranteed do
@@ -134,7 +102,7 @@ class GuzzleIntegration extends Integration
                 $span->service = Urls::hostnameForTag($url);
             }
             $span->meta[Tag::HTTP_METHOD] = $request->getMethod();
-            $span->meta[Tag::HTTP_URL] = Urls::sanitize($url);
+            $span->meta[Tag::HTTP_URL] = \DDTrace\Private_\util_url_sanitize($url);
         } elseif (\is_a($request, 'GuzzleHttp\Message\RequestInterface')) {
             /** @var \GuzzleHttp\Message\RequestInterface $request */
             $url = $request->getUrl();
@@ -142,7 +110,7 @@ class GuzzleIntegration extends Integration
                 $span->service = Urls::hostnameForTag($url);
             }
             $span->meta[Tag::HTTP_METHOD] = $request->getMethod();
-            $span->meta[Tag::HTTP_URL] = Urls::sanitize($url);
+            $span->meta[Tag::HTTP_URL] = \DDTrace\Private_\util_url_sanitize($url);
         }
     }
 }

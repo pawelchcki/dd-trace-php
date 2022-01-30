@@ -24,6 +24,7 @@ final class SpanAssertion
     private $resource = SpanAssertion::NOT_TESTED;
     private $onlyCheckExistence = false;
     private $isTraceAnalyticsCandidate = false;
+    private $testTime = true;
     /** @var SpanAssertion[] */
     private $children = [];
 
@@ -117,7 +118,9 @@ final class SpanAssertion
             $this->existingTags[] = Tag::ERROR_TYPE;
         }
         if (null !== $errorMessage) {
-            $this->exactTags[Tag::ERROR_MSG] = $errorMessage;
+            // commonly contains file/line info, use global format
+            // we do not want to test the specific formatting of exceptions here
+            $this->exactTags[Tag::ERROR_MSG] = "%S$errorMessage%S";
         }
         if ($exceptionThrown) {
             $this->existingTags[] = Tag::ERROR_STACK;
@@ -330,6 +333,14 @@ final class SpanAssertion
     public function getExactMetrics()
     {
         return $this->exactMetrics;
+    }
+
+    /**
+     * @return bool
+     */
+    public function getTestTime()
+    {
+        return $this->testTime;
     }
 
     public function __toString()

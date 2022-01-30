@@ -34,3 +34,4 @@ greet hooked.
 Exception thrown in ddtrace's closure for greet(): !
 Hello, Datadog.
 Done.
+Successfully triggered flush with trace of size 1

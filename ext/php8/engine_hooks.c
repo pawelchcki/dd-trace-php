@@ -15,11 +15,15 @@ static zend_op_array *(*_prev_compile_file)(zend_file_handle *file_handle, int t
 static void _compile_minit(void);
 static void _compile_mshutdown(void);
 
+void (*ddtrace_prev_error_cb)(DDTRACE_ERROR_CB_PARAMETERS);
+
 void ddtrace_engine_hooks_minit(void) {
     _compile_minit();
 
     zend_observer_fcall_register(ddtrace_observer_fcall_init);
-    zend_observer_error_register(ddtrace_observer_error_cb);
+
+    ddtrace_prev_error_cb = zend_error_cb;
+    zend_error_cb = ddtrace_error_cb;
 }
 
 void ddtrace_engine_hooks_mshutdown(void) { _compile_mshutdown(); }
@@ -41,14 +45,12 @@ static zend_op_array *_dd_compile_file(zend_file_handle *file_handle, int type) 
 }
 
 static void _compile_minit(void) {
-    if (get_dd_trace_measure_compile_time()) {
-        _prev_compile_file = zend_compile_file;
-        zend_compile_file = _dd_compile_file;
-    }
+    _prev_compile_file = zend_compile_file;
+    zend_compile_file = _dd_compile_file;
 }
 
 static void _compile_mshutdown(void) {
-    if (get_dd_trace_measure_compile_time() && zend_compile_file == _dd_compile_file) {
+    if (zend_compile_file == _dd_compile_file) {
         zend_compile_file = _prev_compile_file;
     }
 }
@@ -65,7 +67,11 @@ void ddtrace_restore_error_handling(ddtrace_error_handling *eh) {
             zend_string_release(PG(last_error_message));
         }
         if (PG(last_error_file) != eh->file) {
+#if PHP_VERSION_ID < 80100
             free(PG(last_error_file));
+#else
+            zend_string_release(PG(last_error_file));
+#endif
         }
     }
     zend_restore_error_handling(&eh->error_handling);
@@ -76,7 +82,6 @@ void ddtrace_restore_error_handling(ddtrace_error_handling *eh) {
     EG(error_reporting) = eh->error_reporting;
 }
 
-extern inline void ddtrace_sandbox_end(ddtrace_sandbox_backup *backup TSRMLS_DC);
+extern inline void ddtrace_sandbox_end(ddtrace_sandbox_backup *backup);
 extern inline ddtrace_sandbox_backup ddtrace_sandbox_begin(void);
 extern inline void ddtrace_maybe_clear_exception(void);
-extern inline zend_class_entry *ddtrace_get_exception_base(zval *object);

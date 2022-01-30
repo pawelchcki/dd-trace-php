@@ -1,6 +1,7 @@
 --TEST--
 DDTrace\trace_function() can trace with internal spans
 --ENV--
+DD_TRACE_GENERATE_ROOT_SPAN=0
 DD_TRACE_TRACED_INTERNAL_FUNCTIONS=array_sum,mt_rand
 --FILE--
 <?php
@@ -47,13 +48,13 @@ var_dump(DDTrace\trace_function(
         $span->resource = 'BarResource';
         $span->service = 'BarService';
         $span->type = 'BarType';
-        $span->meta = [
+        $span->meta += [
             'args.0' => isset($args[0]) ? $args[0] : '',
             'retval.thoughts' => isset($retval['thoughts']) ? $retval['thoughts'] : '',
             'retval.first' => isset($retval['first']) ? $retval['first'] : '',
             'retval.rand' => isset($retval['rand']) ? $retval['rand'] : '',
         ];
-        $span->metrics = [
+        $span->metrics += [
             'foo' => isset($args[1][1]) ? $args[1][1] : '',
             'bar' => isset($args[1][2]) ? $args[1][2] : '',
         ];
@@ -62,7 +63,7 @@ var_dump(DDTrace\trace_function(
 
 testFoo();
 var_dump(addOne(0));
-$ret = bar('tracing is awesome', ['first', 'foo-red', 'bar-green']);
+$ret = bar('tracing is awesome', ['first', 1.2, '25']);
 var_dump($ret);
 
 echo "---\n";
@@ -94,9 +95,9 @@ array(5) {
   [0]=>
   array(10) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -110,7 +111,9 @@ array(5) {
     ["type"]=>
     string(7) "BarType"
     ["meta"]=>
-    array(5) {
+    array(6) {
+      ["system.pid"]=>
+      string(%d) "%d"
       ["args.0"]=>
       string(18) "tracing is awesome"
       ["retval.thoughts"]=>
@@ -119,25 +122,31 @@ array(5) {
       string(5) "first"
       ["retval.rand"]=>
       string(%d) "%d"
-      ["system.pid"]=>
-      string(%d) "%d"
+      ["_dd.p.upstream_services"]=>
+      string(24) "QmFyU2VydmljZQ|1|1|1.000"
     }
     ["metrics"]=>
-    array(2) {
+    array(5) {
       ["foo"]=>
-      string(7) "foo-red"
+      float(1.2)
       ["bar"]=>
-      string(9) "bar-green"
+      float(25)
+      ["_dd.rule_psr"]=>
+      float(1)
+      ["_sampling_priority_v1"]=>
+      float(1)
+      ["php.compilation.total_time_ms"]=>
+      float(%f)
     }
   }
   [1]=>
-  array(7) {
+  array(9) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["parent_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -146,15 +155,19 @@ array(5) {
     string(8) "ArraySum"
     ["resource"]=>
     string(8) "ArraySum"
+    ["service"]=>
+    string(29) "dd_trace_function_complex.php"
+    ["type"]=>
+    string(3) "cli"
   }
   [2]=>
-  array(7) {
+  array(9) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["parent_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -163,13 +176,17 @@ array(5) {
     string(6) "AddOne"
     ["resource"]=>
     string(6) "AddOne"
+    ["service"]=>
+    string(29) "dd_trace_function_complex.php"
+    ["type"]=>
+    string(3) "cli"
   }
   [3]=>
-  array(7) {
+  array(10) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -178,18 +195,33 @@ array(5) {
     string(6) "AddOne"
     ["resource"]=>
     string(6) "AddOne"
+    ["service"]=>
+    string(29) "dd_trace_function_complex.php"
+    ["type"]=>
+    string(3) "cli"
     ["meta"]=>
-    array(1) {
+    array(2) {
       ["system.pid"]=>
       string(%d) "%d"
+      ["_dd.p.upstream_services"]=>
+      string(49) "ZGRfdHJhY2VfZnVuY3Rpb25fY29tcGxleC5waHA|1|1|1.000"
+    }
+    ["metrics"]=>
+    array(3) {
+      ["_dd.rule_psr"]=>
+      float(1)
+      ["_sampling_priority_v1"]=>
+      float(1)
+      ["php.compilation.total_time_ms"]=>
+      float(%f)
     }
   }
   [4]=>
-  array(7) {
+  array(10) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -198,10 +230,25 @@ array(5) {
     string(7) "TestFoo"
     ["resource"]=>
     string(7) "TestFoo"
+    ["service"]=>
+    string(29) "dd_trace_function_complex.php"
+    ["type"]=>
+    string(3) "cli"
     ["meta"]=>
-    array(1) {
+    array(2) {
       ["system.pid"]=>
       string(%d) "%d"
+      ["_dd.p.upstream_services"]=>
+      string(49) "ZGRfdHJhY2VfZnVuY3Rpb25fY29tcGxleC5waHA|1|1|1.000"
+    }
+    ["metrics"]=>
+    array(3) {
+      ["_dd.rule_psr"]=>
+      float(1)
+      ["_sampling_priority_v1"]=>
+      float(1)
+      ["php.compilation.total_time_ms"]=>
+      float(%f)
     }
   }
 }

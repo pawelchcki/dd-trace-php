@@ -22,3 +22,4 @@ Greeter::greet('Datadog');
 DDTrace\hook_method was given neither prehook nor posthook.
 bool(false)
 Hello, Datadog.
+Successfully triggered flush with trace of size 1

@@ -21,3 +21,4 @@ Cannot run tracing closure for dd_trace_serialize_closed_spans(); spans out of s
 array(0) {
 }
 Done.
+No finished traces to be sent to the agent

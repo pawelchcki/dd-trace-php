@@ -31,9 +31,9 @@ try {
     echo 'Has error.stack: ' . isset($span['meta']['error.stack']) . PHP_EOL;
 }
 ?>
---EXPECT--
+--EXPECTF--
 Spans count: 1
 error: 1
 error.type: Exception
-error.msg: chmod(): Can not call chmod() for a non-standard stream
+error.msg: Uncaught Exception: chmod(): Can not call chmod() for a non-standard stream in %s:%d
 Has error.stack: 1

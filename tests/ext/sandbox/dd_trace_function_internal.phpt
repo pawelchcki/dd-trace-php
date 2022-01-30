@@ -1,6 +1,7 @@
 --TEST--
 DDTrace\trace_function() can trace internal functions with internal spans
 --ENV--
+DD_TRACE_GENERATE_ROOT_SPAN=0
 DD_TRACE_TRACED_INTERNAL_FUNCTIONS=array_sum
 --FILE--
 <?php
@@ -23,11 +24,11 @@ int(9)
 ---
 array(1) {
   [0]=>
-  array(7) {
+  array(10) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -36,10 +37,25 @@ array(1) {
     string(8) "ArraySum"
     ["resource"]=>
     string(8) "ArraySum"
+    ["service"]=>
+    string(30) "dd_trace_function_internal.php"
+    ["type"]=>
+    string(3) "cli"
     ["meta"]=>
-    array(1) {
+    array(2) {
       ["system.pid"]=>
       string(%d) "%d"
+      ["_dd.p.upstream_services"]=>
+      string(50) "ZGRfdHJhY2VfZnVuY3Rpb25faW50ZXJuYWwucGhw|1|1|1.000"
+    }
+    ["metrics"]=>
+    array(3) {
+      ["_dd.rule_psr"]=>
+      float(1)
+      ["_sampling_priority_v1"]=>
+      float(1)
+      ["php.compilation.total_time_ms"]=>
+      float(%f)
     }
   }
 }

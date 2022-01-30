@@ -15,6 +15,9 @@ abstract class WebFrameworkTestCase extends IntegrationTestCase
 
     const FLUSH_INTERVAL_MS = 333;
 
+    // host and port for the testing framework
+    const HOST = 'http://localhost';
+    const HOST_WITH_CREDENTIALS = 'http://my_user:my_password@localhost';
     const PORT = 9999;
 
     const ERROR_LOG_NAME = 'phpunit_error.log';
@@ -23,6 +26,7 @@ abstract class WebFrameworkTestCase extends IntegrationTestCase
      * @var WebServer|null
      */
     private static $appServer;
+    protected $checkWebserverErrors = true;
 
     public static function ddSetUpBeforeClass()
     {
@@ -38,6 +42,14 @@ abstract class WebFrameworkTestCase extends IntegrationTestCase
     {
         parent::ddTearDownAfterClass();
         static::tearDownWebServer();
+    }
+
+    protected function ddTearDown()
+    {
+        if (self::$appServer && $this->checkWebserverErrors && ($error = self::$appServer->checkErrors())) {
+            $this->fail("Got error from webserver:\n$error");
+        }
+        parent::ddTearDown();
     }
 
     /**
@@ -62,6 +74,7 @@ abstract class WebFrameworkTestCase extends IntegrationTestCase
             // Short flush interval by default or our tests will take all day
             'DD_TRACE_AGENT_FLUSH_INTERVAL' => static::FLUSH_INTERVAL_MS,
             'DD_AUTOLOAD_NO_COMPILE' => getenv('DD_AUTOLOAD_NO_COMPILE'),
+            'DD_TRACE_DEBUG' => 0,
         ];
 
         return $envs;
@@ -118,7 +131,7 @@ abstract class WebFrameworkTestCase extends IntegrationTestCase
     {
         $response = $this->sendRequest(
             $spec->getMethod(),
-            'http://localhost:' . self::PORT . $spec->getPath(),
+            self::HOST . ':' . self::PORT . $spec->getPath(),
             $spec->getHeaders()
         );
         return $response;

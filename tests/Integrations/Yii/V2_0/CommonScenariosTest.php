@@ -127,7 +127,11 @@ final class CommonScenariosTest extends WebFrameworkTestCase
                         'app.endpoint' => 'app\controllers\SimpleController::actionError',
                         'app.route.path' => '/error',
                     ])
-                        ->setError()
+                        ->setError(
+                            'Exception',
+                            'datadog',
+                            true
+                        )
                         ->withChildren([
                             SpanAssertion::build(
                                 'yii\web\Application.runAction',

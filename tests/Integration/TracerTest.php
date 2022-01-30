@@ -17,14 +17,17 @@ final class TracerTest extends BaseTestCase
     protected function ddSetUp()
     {
         parent::ddSetUp();
-        \putenv('DD_TAGS=global_tag:global,also_in_span:should_not_ovverride');
+        self::putenv('DD_TRACE_GENERATE_ROOT_SPAN=0');
+        self::putenv('DD_TAGS=global_tag:global,also_in_span:should_not_override');
+        \dd_trace_internal_fn('ddtrace_reload_config'); // tags are now internal config
     }
 
     protected function ddTearDown()
     {
         \putenv('DD_TAGS');
-        \putenv('DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED');
-        \putenv('DD_SERVICE_MAPPING');
+        self::putenv('DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED');
+        self::putenv('DD_SERVICE_MAPPING');
+        self::putenv('DD_TRACE_GENERATE_ROOT_SPAN');
         parent::ddTearDown();
     }
 
@@ -78,7 +81,7 @@ final class TracerTest extends BaseTestCase
     public function testResourceNormalizationCLILegacyApiExplicitViaOptionsDefault()
     {
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.operation');
+            $scope = $tracer->startRootSpan('custom.operation');
             $scope->close();
         }, null, ['resource' => 'explicit']);
 
@@ -91,7 +94,7 @@ final class TracerTest extends BaseTestCase
     public function testResourceNormalizationCLILegacyApiImplicitDefault()
     {
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.operation');
+            $scope = $tracer->startRootSpan('custom.operation');
             $scope->close();
         });
 
@@ -103,9 +106,9 @@ final class TracerTest extends BaseTestCase
      */
     public function testResourceNormalizationCLILegacyApiImplicitViaRequestToResourceOFF()
     {
-        putenv('DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED=false');
+        self::putenv('DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED=false');
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.operation');
+            $scope = $tracer->startRootSpan('custom.operation');
             $scope->close();
         });
 
@@ -117,9 +120,9 @@ final class TracerTest extends BaseTestCase
      */
     public function testResourceNormalizationCLILegacyApiImplicitViaRequestToResourceON()
     {
-        putenv('DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED=true');
+        self::putenv('DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED=true');
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.operation');
+            $scope = $tracer->startRootSpan('custom.operation');
             $scope->close();
         });
 
@@ -144,7 +147,7 @@ final class TracerTest extends BaseTestCase
         );
 
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $this->dummyMethodResourceNormalizationInternalApi();
             $scope->close();
         });
@@ -159,7 +162,7 @@ final class TracerTest extends BaseTestCase
     public function testResourceNormalizationNonRootSpanLegacyApi()
     {
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scopeInternal = $tracer->startActiveSpan('custom.internal');
             $scopeInternal->close();
             $scope->close();
@@ -177,6 +180,7 @@ final class TracerTest extends BaseTestCase
             __DIR__ . '/TracerTest_files/index.php',
             [
                 'DD_TRACE_NO_AUTOLOADER' => true,
+                'DD_TRACE_GENERATE_ROOT_SPAN' => true,
             ]
         );
 
@@ -193,6 +197,7 @@ final class TracerTest extends BaseTestCase
             [
                 'DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED' => true,
                 'DD_TRACE_NO_AUTOLOADER' => true,
+                'DD_TRACE_GENERATE_ROOT_SPAN' => true,
             ]
         );
 
@@ -209,6 +214,7 @@ final class TracerTest extends BaseTestCase
             [
                 'DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED' => false,
                 'DD_TRACE_NO_AUTOLOADER' => true,
+                'DD_TRACE_GENERATE_ROOT_SPAN' => true,
             ]
         );
 
@@ -225,6 +231,7 @@ final class TracerTest extends BaseTestCase
             [
                 'DD_TRACE_URL_AS_RESOURCE_NAMES_ENABLED' => true,
                 'DD_TRACE_NO_AUTOLOADER' => true,
+                'DD_TRACE_GENERATE_ROOT_SPAN' => true,
             ]
         );
 
@@ -235,7 +242,7 @@ final class TracerTest extends BaseTestCase
     {
         $this->putEnvAndReloadConfig(['DD_ENV=my-env']);
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->close();
         });
 
@@ -246,7 +253,7 @@ final class TracerTest extends BaseTestCase
     {
         $this->putEnvAndReloadConfig(['DD_ENV']);
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->close();
         });
 
@@ -257,7 +264,7 @@ final class TracerTest extends BaseTestCase
     {
         $this->putEnvAndReloadConfig(['DD_ENV=from-env', 'DD_TAGS=env:from-tags']);
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->close();
         });
 
@@ -271,7 +278,7 @@ final class TracerTest extends BaseTestCase
             'noopEnvPrecedence',
             function (SpanData $span) {
                 $span->name = 'custom.child.2';
-                $span->meta = ['local_tag' => 'local'];
+                $span->meta['local_tag'] = 'local';
             }
         );
 
@@ -279,13 +286,12 @@ final class TracerTest extends BaseTestCase
 
         $test = $this;
         $traces = $this->isolateTracer(function (Tracer $tracer) use ($test) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scopeChild = $tracer->startActiveSpan('custom.child.1');
             $test->noopEnvPrecedence();
             $scopeChild->close();
             $scope->close();
         });
-
         self::assertCount(3, $traces[0]);
 
         $span = $traces[0][0];
@@ -309,7 +315,7 @@ final class TracerTest extends BaseTestCase
     {
         $this->putEnvAndReloadConfig(['DD_VERSION=1.2.3']);
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->close();
         });
 
@@ -320,7 +326,7 @@ final class TracerTest extends BaseTestCase
     {
         $this->putEnvAndReloadConfig(['DD_VERSION']);
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->close();
         });
 
@@ -330,8 +336,9 @@ final class TracerTest extends BaseTestCase
     public function testDDVersionHasPrecedenceOverGlobalTags()
     {
         $this->putEnvAndReloadConfig(['DD_VERSION=from-env', 'DD_TAGS=version:from-tags']);
+        \dd_trace_internal_fn('ddtrace_reload_config'); // tags are now internal config
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->close();
         });
 
@@ -352,7 +359,7 @@ final class TracerTest extends BaseTestCase
 
         $test = $this;
         $traces = $this->isolateTracer(function (Tracer $tracer) use ($test) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scopeChild = $tracer->startActiveSpan('custom.child.1');
             $test->noopVersionPrecedence();
             $scopeChild->close();
@@ -380,7 +387,7 @@ final class TracerTest extends BaseTestCase
     public function testServiceMappingNoEnvMapping()
     {
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->getSpan()->setTag(Tag::SERVICE_NAME, 'original_service');
             $scope->close();
         });
@@ -390,9 +397,10 @@ final class TracerTest extends BaseTestCase
 
     public function testServiceMappingRootSpan()
     {
-        putenv('DD_SERVICE_MAPPING=original_service:changed_service');
+        self::putenv('DD_SERVICE_MAPPING=original_service:changed_service');
+        \dd_trace_internal_fn('ddtrace_reload_config'); // service mappings are now internal config
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->getSpan()->setTag(Tag::SERVICE_NAME, 'original_service');
             $scope->close();
         });
@@ -402,9 +410,11 @@ final class TracerTest extends BaseTestCase
 
     public function testServiceMappingNestedSpanLegacyApi()
     {
-        putenv('DD_SERVICE_MAPPING=original_service:changed_service');
+        self::putenv('DD_SERVICE_MAPPING=original_service:changed_service');
+        \dd_trace_internal_fn('ddtrace_reload_config'); // service mappings are now internal config
+
         $traces = $this->isolateTracer(function (Tracer $tracer) {
-            $scope = $tracer->startActiveSpan('custom.root');
+            $scope = $tracer->startRootSpan('custom.root');
             $scope->getSpan()->setTag(Tag::SERVICE_NAME, 'root_service');
             $scopeInternal = $tracer->startActiveSpan('custom.internal');
             $scopeInternal->getSpan()->setTag(Tag::SERVICE_NAME, 'original_service');
@@ -418,7 +428,8 @@ final class TracerTest extends BaseTestCase
 
     public function testServiceMappingInternalApi()
     {
-        putenv('DD_SERVICE_MAPPING=original_service:changed_service');
+        self::putenv('DD_SERVICE_MAPPING=original_service:changed_service');
+        \dd_trace_internal_fn('ddtrace_reload_config'); // service mappings are now internal config
 
         \DDTrace\trace_method(
             'DDTrace\Tests\Integration\TracerTest',
@@ -450,6 +461,7 @@ final class TracerTest extends BaseTestCase
                 'DD_SERVICE_MAPPING' => 'host-httpbin_integration:changed_service',
                 'DD_TRACE_HTTP_CLIENT_SPLIT_BY_DOMAIN' => true,
                 'DD_TRACE_NO_AUTOLOADER' => true,
+                'DD_TRACE_GENERATE_ROOT_SPAN' => true,
             ]
         );
 
@@ -467,6 +479,7 @@ final class TracerTest extends BaseTestCase
                 'DD_SERVICE_MAPPING' => 'host-127.0.0.1:changed_service',
                 'DD_TRACE_HTTP_CLIENT_SPLIT_BY_DOMAIN' => true,
                 'DD_TRACE_NO_AUTOLOADER' => true,
+                'DD_TRACE_GENERATE_ROOT_SPAN' => true,
             ]
         );
 

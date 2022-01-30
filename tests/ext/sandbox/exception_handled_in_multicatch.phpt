@@ -42,7 +42,7 @@ array_map(function($span) {
     echo PHP_EOL;
 }, dd_trace_serialize_closed_spans());
 ?>
---EXPECT--
+--EXPECTF--
 FooException caught
 multiCatch, FooException caught
-throwException, throwException, Oops!
+throwException, throwException, Uncaught FooException: Oops! in %s:%d

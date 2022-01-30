@@ -22,16 +22,26 @@ final class SpanContext extends SpanContextData
         $this->isDistributedTracingActivationContext = $isDistributedTracingActivationContext;
     }
 
-    public static function createAsChild(SpanContextInterface $parentContext)
+    public static function createAsChild(SpanContextInterface $parentContext, $startTime = null)
     {
         // Since dd_trace_push_span_id() updates the return value of
         // dd_trace_peek_span_id(), we need to access the existing
         // value before generating a new ID
         $activeSpanId = dd_trace_peek_span_id();
 
+        if (!$parentContext->isDistributedTracingActivationContext() || !active_span()) {
+            if ($startTime) {
+                start_span($startTime);
+            } else {
+                start_span(); // we'll peek at the span stack top later
+            }
+        }
+        if ($parentContext->isDistributedTracingActivationContext() && !$activeSpanId) {
+            $activeSpanId = $parentContext->getTraceId();
+        }
         $instance = new self(
             $parentContext->getTraceId(),
-            dd_trace_push_span_id(),
+            \dd_trace_peek_span_id(),
             // Since the last span could have been generated internally,
             // we can't use `$parentContext->getSpanId()` here
             $activeSpanId,
@@ -49,9 +59,17 @@ final class SpanContext extends SpanContextData
         return $instance;
     }
 
-    public static function createAsRoot(array $baggageItems = [])
+    public static function createAsRoot(array $baggageItems = [], $startTime = null)
     {
-        $nextId = dd_trace_push_span_id();
+        // with peek the current span id for the existing root span
+        if (!active_span()) {
+            if ($startTime) {
+                start_span($startTime);
+            } else {
+                start_span(); // we'll peek at the span stack top later
+            }
+        }
+        $nextId = \dd_trace_peek_span_id();
 
         return new self(
             $nextId,
@@ -89,6 +107,7 @@ final class SpanContext extends SpanContextData
     /**
      * {@inheritdoc}
      */
+    #[\ReturnTypeWillChange]
     public function getIterator()
     {
         return new ArrayIterator($this->baggageItems);

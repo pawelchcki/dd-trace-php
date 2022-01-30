@@ -16,6 +16,7 @@ class SamplingPriorityTest extends WebFrameworkTestCase
     protected static function getEnvs()
     {
         return array_merge(parent::getEnvs(), [
+            'DD_DISTRIBUTED_TRACING' => 'true',
             'DD_PRIORITY_SAMPLING' => 'true',
             'DD_TRACE_NO_AUTOLOADER' => 'true',
         ]);
@@ -31,7 +32,7 @@ class SamplingPriorityTest extends WebFrameworkTestCase
                 [
                     'x-datadog-trace-id: 100',
                     'x-datadog-parent-id: 200',
-                    'x-datadog-sampling-priority: 1',
+                    'x-datadog-sampling-priority: 2',
                 ]
             );
             $this->call($spec);
@@ -46,7 +47,7 @@ class SamplingPriorityTest extends WebFrameworkTestCase
             )->withExactTags(
                 SpanAssertion::NOT_TESTED
             )->withExactMetrics([
-                '_sampling_priority_v1' => 1,
+                '_sampling_priority_v1' => 2,
             ])
         );
     }

@@ -19,3 +19,4 @@ greet('Datadog');
 DDTrace\hook_function was given neither prehook nor posthook.
 bool(false)
 Hello, Datadog.
+Successfully triggered flush with trace of size 1

@@ -56,3 +56,4 @@ $app->run();
 App::__construct hooked.
 App::run
 App::run traced.
+Successfully triggered flush with trace of size 2

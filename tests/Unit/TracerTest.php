@@ -26,18 +26,18 @@ final class TracerTest extends BaseTestCase
 
     protected function ddSetUp()
     {
-        \putenv('DD_AUTOFINISH_SPANS');
-        \putenv('DD_TRACE_REPORT_HOSTNAME');
-        \putenv('DD_TAGS');
+        self::putenv('DD_AUTOFINISH_SPANS');
+        self::putenv('DD_TRACE_REPORT_HOSTNAME');
+        self::putenv('DD_TAGS');
         parent::ddSetUp();
     }
 
     protected function ddTearDown()
     {
         parent::ddTearDown();
-        \putenv('DD_TRACE_REPORT_HOSTNAME');
-        \putenv('DD_AUTOFINISH_SPANS');
-        \putenv('DD_TAGS');
+        self::putenv('DD_TRACE_REPORT_HOSTNAME');
+        self::putenv('DD_AUTOFINISH_SPANS');
+        self::putenv('DD_TAGS');
     }
 
     public function testStartSpanAsNoop()
@@ -50,12 +50,14 @@ final class TracerTest extends BaseTestCase
     public function testCreateSpanSuccessWithExpectedValues()
     {
         $tracer = new Tracer(new NoopTransport());
+        $tracer->startRootSpan('foo'); // setting start_time not allowed on internal root span
         $startTime = Time::now();
         $span = $tracer->startSpan(self::OPERATION_NAME, [
             'tags' => [
                 self::TAG_KEY => self::TAG_VALUE
             ],
             'start_time' => $startTime,
+            'child_of' => $tracer->getActiveSpan(),
         ]);
 
         $this->assertEquals(self::OPERATION_NAME, $span->getOperationName());
@@ -76,6 +78,7 @@ final class TracerTest extends BaseTestCase
 
     public function testStartSpanAsRootWithPid()
     {
+        \dd_trace_serialize_closed_spans();
         $tracer = new Tracer(new NoopTransport());
         $span = $tracer->startSpan(self::OPERATION_NAME);
         $this->assertEquals(getmypid(), $span->getTag(Tag::PID));
@@ -141,45 +144,24 @@ final class TracerTest extends BaseTestCase
         $this->assertEquals($expectedContext, $actualContext);
     }
 
-    public function testOnlyFinishedTracesAreBeingSent()
-    {
-        $transport = $this->prophesize('DDTrace\Transport');
-        $tracer = new Tracer($transport->reveal());
-        $span = $tracer->startSpan(self::OPERATION_NAME);
-        $tracer->startSpan(self::ANOTHER_OPERATION_NAME, [
-            'child_of' => $span,
-        ]);
-        $span->finish();
-
-        $span2 = $tracer->startSpan(self::OPERATION_NAME);
-        $span3 = $tracer->startSpan(self::ANOTHER_OPERATION_NAME, [
-            'child_of' => $span2,
-        ]);
-        $span2->finish();
-        $span3->finish();
-
-        $transport->send($tracer)->shouldBeCalled();
-
-        $tracer->flush();
-    }
-
-    public function testPrioritySamplingIsLazilyAssignedOnInject()
+    public function testPrioritySamplingIsEarlyAssignedAndRefreshedOnInject()
     {
         $tracer = new Tracer(new DebugTransport());
         $span = $tracer->startRootSpan(self::OPERATION_NAME)->getSpan();
-        $this->assertNull($tracer->getPrioritySampling());
+        $this->assertSame(PrioritySampling::USER_KEEP, $tracer->getPrioritySampling());
+        $span->metrics = [];
         $carrier = [];
         $tracer->inject($span->getContext(), Format::TEXT_MAP, $carrier);
-        $this->assertSame(PrioritySampling::AUTO_KEEP, $tracer->getPrioritySampling());
+        $this->assertSame(PrioritySampling::USER_KEEP, $tracer->getPrioritySampling());
     }
 
-    public function testPrioritySamplingIsLazilyAssignedBeforeFlush()
+    public function testPrioritySamplingIsLazilyAssignedAndRefreshedBeforeFlush()
     {
         $tracer = new Tracer(new DebugTransport());
-        $tracer->startRootSpan(self::OPERATION_NAME);
-        $this->assertNull($tracer->getPrioritySampling());
-        $tracer->flush();
-        $this->assertSame(PrioritySampling::AUTO_KEEP, $tracer->getPrioritySampling());
+        $span = $tracer->startRootSpan(self::OPERATION_NAME)->getSpan();
+        $this->assertSame(PrioritySampling::USER_KEEP, $tracer->getPrioritySampling());
+        $span->metrics = [];
+        $this->assertSame(PrioritySampling::USER_KEEP, $tracer->getPrioritySampling());
     }
 
     public function testPrioritySamplingInheritedFromDistributedTracingContext()
@@ -195,33 +177,6 @@ final class TracerTest extends BaseTestCase
         $this->assertSame(PrioritySampling::USER_REJECT, $tracer->getPrioritySampling());
     }
 
-    public function testUnfinishedSpansAreNotSentOnFlush()
-    {
-        $transport = new DebugTransport();
-        $tracer = new Tracer($transport);
-        $tracer->startActiveSpan('root');
-        $tracer->startActiveSpan('child');
-
-        $tracer->flush();
-
-        $this->assertEmpty($transport->getTraces());
-    }
-
-    public function testUnfinishedSpansCanBeFinishedOnFlush()
-    {
-        \putenv('DD_AUTOFINISH_SPANS=true');
-
-        $transport = new DebugTransport();
-        $tracer = new Tracer($transport);
-        $tracer->startActiveSpan('root');
-        $tracer->startActiveSpan('child');
-
-        $tracer->flush();
-        $sent = $transport->getTraces();
-        $this->assertSame('root', $sent[0][0]['name']);
-        $this->assertSame('child', $sent[0][1]['name']);
-    }
-
     public function testSpanStartedAtRootCanBeAccessedLater()
     {
         $tracer = new Tracer(new NoopTransport());
@@ -229,27 +184,13 @@ final class TracerTest extends BaseTestCase
         $this->assertSame($scope, $tracer->getRootScope());
     }
 
-    public function testFlushDoesntAddHostnameToRootSpanByDefault()
-    {
-        $tracer = new Tracer(new NoopTransport());
-        $scope = $tracer->startRootSpan(self::OPERATION_NAME);
-        $this->assertNull($tracer->getRootScope()->getSpan()->getTag(Tag::HOSTNAME));
-
-        $tracer->flush();
-
-        $this->assertNull($tracer->getRootScope()->getSpan()->getTag(Tag::HOSTNAME));
-    }
-
     public function testFlushAddsHostnameToRootSpanWhenEnabled()
     {
-        \putenv('DD_TRACE_REPORT_HOSTNAME=true');
+        self::putenv('DD_TRACE_REPORT_HOSTNAME=true');
 
+        \dd_trace_serialize_closed_spans();
         $tracer = new Tracer(new NoopTransport());
         $scope = $tracer->startRootSpan(self::OPERATION_NAME);
-        $this->assertNull($tracer->getRootScope()->getSpan()->getTag(Tag::HOSTNAME));
-
-        $tracer->flush();
-
         $this->assertEquals(gethostname(), $tracer->getRootScope()->getSpan()->getTag(Tag::HOSTNAME));
     }
 
@@ -261,32 +202,41 @@ final class TracerTest extends BaseTestCase
 
     public function testHonorGlobalTags()
     {
-        \putenv('DD_TAGS=key1:value1,key2:value2');
+        self::putenv('DD_TAGS=key1:value1,key2:value2');
 
+        \dd_trace_serialize_closed_spans();
         $transport = new DebugTransport();
         $tracer = new Tracer($transport);
         $span = $tracer->startSpan('custom');
 
         $this->assertSame('value1', $span->getAllTags()['key1']);
         $this->assertSame('value2', $span->getAllTags()['key2']);
+
+        self::putenv('DD_TAGS='); // prevent memory leak
     }
 
     public function testInternalAndUserlandSpansAreMergedIntoSameTraceOnSerialization()
     {
+        self::putenv('DD_TRACE_GENERATE_ROOT_SPAN=0');
+        dd_trace_internal_fn('ddtrace_reload_config');
+
         // Clear existing internal spans
-        dd_trace_serialize_closed_spans();
+        \dd_trace_serialize_closed_spans();
 
         \DDTrace\trace_function(__NAMESPACE__ . '\\baz', function () {
             // Do nothing
         });
         $tracer = new Tracer(new DebugTransport());
-        $span = $tracer->startSpan('foo');
+
+        $tracer->startActiveSpan('bar');
         baz();
-        $span->finish();
+        $tracer->getActiveSpan()->finish();
 
         $this->assertSame(2, dd_trace_closed_spans_count());
-        $traces = $tracer->getTracesAsArray();
-        $this->assertCount(1, $traces);
-        $this->assertCount(2, $traces[0]);
+        $traces = \dd_trace_serialize_closed_spans();
+        $this->assertCount(2, $traces);
+
+        self::putenv('DD_TRACE_GENERATE_ROOT_SPAN');
+        dd_trace_internal_fn('ddtrace_reload_config');
     }
 }

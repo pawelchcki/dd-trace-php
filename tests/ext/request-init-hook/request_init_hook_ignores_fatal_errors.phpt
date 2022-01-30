@@ -15,3 +15,4 @@ echo "Request start" . PHP_EOL;
 Calling a function that does not exist...
 Error %s in request init hook: Call to undefined function this_function_does_not_%s
 Request start
+Successfully triggered flush with trace of size 1

@@ -6,20 +6,13 @@ use DDTrace\Integrations\Integration;
 use DDTrace\SpanData;
 use DDTrace\Tag;
 use DDTrace\Type;
+use DDTrace\Util\ObjectKVStore;
 
 class PDOIntegration extends Integration
 {
     const NAME = 'pdo';
 
-    /**
-     * @var array
-     */
-    private static $connections = [];
-
-    /**
-     * @var array
-     */
-    private static $statements = [];
+    const CONNECTION_TAGS_KEY = 'connection_tags';
 
     /**
      * @return string The integration name.
@@ -43,9 +36,6 @@ class PDOIntegration extends Integration
 
         // public PDO::__construct ( string $dsn [, string $username [, string $passwd [, array $options ]]] )
         \DDTrace\trace_method('PDO', '__construct', function (SpanData $span, array $args) {
-            if (dd_trace_tracer_is_limited()) {
-                return false;
-            }
             $span->name = $span->resource = 'PDO.__construct';
             $span->service = 'pdo';
             $span->type = Type::SQL;
@@ -54,13 +44,10 @@ class PDOIntegration extends Integration
 
         // public int PDO::exec(string $query)
         \DDTrace\trace_method('PDO', 'exec', function (SpanData $span, array $args, $retval) use ($integration) {
-            if (dd_trace_tracer_is_limited()) {
-                return false;
-            }
             $span->name = 'PDO.exec';
             $span->service = 'pdo';
             $span->type = Type::SQL;
-            $span->resource = $args[0];
+            $span->resource = Integration::toString($args[0]);
             if (is_numeric($retval)) {
                 $span->meta = [
                     'db.rowcount' => $retval,
@@ -77,13 +64,10 @@ class PDOIntegration extends Integration
         // public PDOStatement PDO::query(string $query, int PDO::FETCH_INFO, object $object)
         // public int PDO::exec(string $query)
         \DDTrace\trace_method('PDO', 'query', function (SpanData $span, array $args, $retval) use ($integration) {
-            if (dd_trace_tracer_is_limited()) {
-                return false;
-            }
             $span->name = 'PDO.query';
             $span->service = 'pdo';
             $span->type = Type::SQL;
-            $span->resource = $args[0];
+            $span->resource = Integration::toString($args[0]);
             if ($retval instanceof \PDOStatement) {
                 $span->meta = [
                     'db.rowcount' => $retval->rowCount(),
@@ -97,9 +81,6 @@ class PDOIntegration extends Integration
 
         // public bool PDO::commit ( void )
         \DDTrace\trace_method('PDO', 'commit', function (SpanData $span) {
-            if (dd_trace_tracer_is_limited()) {
-                return false;
-            }
             $span->name = $span->resource = 'PDO.commit';
             $span->service = 'pdo';
             $span->type = Type::SQL;
@@ -108,13 +89,10 @@ class PDOIntegration extends Integration
 
         // public PDOStatement PDO::prepare ( string $statement [, array $driver_options = array() ] )
         \DDTrace\trace_method('PDO', 'prepare', function (SpanData $span, array $args, $retval) {
-            if (dd_trace_tracer_is_limited()) {
-                return false;
-            }
             $span->name = 'PDO.prepare';
             $span->service = 'pdo';
             $span->type = Type::SQL;
-            $span->resource = $args[0];
+            $span->resource = Integration::toString($args[0]);
             PDOIntegration::setConnectionTags($this, $span);
             PDOIntegration::storeStatementFromConnection($this, $retval);
         });
@@ -124,9 +102,6 @@ class PDOIntegration extends Integration
             'PDOStatement',
             'execute',
             function (SpanData $span, array $args, $retval) use ($integration) {
-                if (dd_trace_tracer_is_limited()) {
-                    return false;
-                }
                 $span->name = 'PDOStatement.execute';
                 $span->service = 'pdo';
                 $span->type = Type::SQL;
@@ -181,13 +156,17 @@ class PDOIntegration extends Integration
                 continue;
             }
             list($key, $value) = explode('=', $valString);
-            switch ($key) {
+            switch (strtolower($key)) {
                 case 'charset':
                     $tags['db.charset'] = $value;
                     break;
+                case 'database':
                 case 'dbname':
                     $tags['db.name'] = $value;
                     break;
+                case 'server':
+                case 'unix_socket':
+                case 'hostname':
                 case 'host':
                     $tags[Tag::TARGET_HOST] = $value;
                     break;
@@ -206,43 +185,25 @@ class PDOIntegration extends Integration
         if (isset($constructorArgs[1])) {
             $tags['db.user'] = $constructorArgs[1];
         }
-        self::$connections[spl_object_hash($pdo)] = $tags;
+        ObjectKVStore::put($pdo, PDOIntegration::CONNECTION_TAGS_KEY, $tags);
         return $tags;
     }
 
     public static function storeStatementFromConnection($pdo, $stmt)
     {
-        if (!$stmt instanceof \PDOStatement) {
-            // When an error occurs 'FALSE' will be returned in place of the statement.
-            return;
-        }
-        $pdoHash = spl_object_hash($pdo);
-        if (isset(self::$connections[$pdoHash])) {
-            self::$statements[spl_object_hash($stmt)] = $pdoHash;
-        }
+        ObjectKVStore::propagate($pdo, $stmt, PDOIntegration::CONNECTION_TAGS_KEY);
     }
 
     public static function setConnectionTags($pdo, SpanData $span)
     {
-        $hash = spl_object_hash($pdo);
-        if (!isset(self::$connections[$hash])) {
-            return;
-        }
-        foreach (self::$connections[$hash] as $tag => $value) {
+        foreach (ObjectKVStore::get($pdo, PDOIntegration::CONNECTION_TAGS_KEY, []) as $tag => $value) {
             $span->meta[$tag] = $value;
         }
     }
 
     public static function setStatementTags($stmt, SpanData $span)
     {
-        $stmtHash = spl_object_hash($stmt);
-        if (!isset(self::$statements[$stmtHash])) {
-            return;
-        }
-        if (!isset(self::$connections[self::$statements[$stmtHash]])) {
-            return;
-        }
-        foreach (self::$connections[self::$statements[$stmtHash]] as $tag => $value) {
+        foreach (ObjectKVStore::get($stmt, PDOIntegration::CONNECTION_TAGS_KEY, []) as $tag => $value) {
             $span->meta[$tag] = $value;
         }
     }

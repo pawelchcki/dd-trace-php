@@ -30,3 +30,4 @@ try {
 bool(true)
 NULL
 Oops!
+Successfully triggered flush with trace of size 2

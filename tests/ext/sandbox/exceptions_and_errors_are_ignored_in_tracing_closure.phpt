@@ -53,3 +53,4 @@ TestFoo
 MTRand
 MTSeed
 NULL
+No finished traces to be sent to the agent

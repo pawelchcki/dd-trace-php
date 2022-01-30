@@ -36,7 +36,8 @@ dd_tracer_circuit_breaker_register_success();
 print_dd_tracer_circuit_breaker_is_closed(); //> true
 dd_tracer_circuit_breaker_register_error();
 print_dd_tracer_circuit_breaker_is_closed(); //> true
-putenv('DD_TRACE_AGENT_MAX_CONSECUTIVE_FAILURES=2');
+
+ini_set('datadog.trace.agent_max_consecutive_failures', 2);
 dd_tracer_circuit_breaker_register_error();
 print_dd_tracer_circuit_breaker_is_closed(); //> false
 

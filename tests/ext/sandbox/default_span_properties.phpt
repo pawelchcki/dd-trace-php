@@ -2,6 +2,7 @@
 Span properties defaults to values if not explicitly set (functions)
 --ENV--
 DD_TRACE_TRACED_INTERNAL_FUNCTIONS=array_sum,range
+DD_TRACE_GENERATE_ROOT_SPAN=0
 --FILE--
 <?php
 use DDTrace\SpanData;
@@ -28,17 +29,17 @@ main(6);
 include 'dd_dumper.inc';
 dd_dump_spans();
 ?>
---EXPECTF--
+--EXPECT--
 21
 28
 spans(\DDTrace\SpanData) (5) {
-  main (main)
+  main (default_span_properties.php, main, cli)
     max => 6
-    system.pid => %d
-  array_sum (array_sum)
+    _dd.p.upstream_services => ZGVmYXVsdF9zcGFuX3Byb3BlcnRpZXMucGhw|1|1|1.000
+  array_sum (default_span_properties.php, array_sum, cli)
     retval => 28
-  MyRange (MyRange)
-  array_sum (array_sum)
+  MyRange (default_span_properties.php, MyRange, cli)
+  array_sum (default_span_properties.php, array_sum, cli)
     retval => 21
-  MyRange (MyRange)
+  MyRange (default_span_properties.php, MyRange, cli)
 }

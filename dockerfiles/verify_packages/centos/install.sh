@@ -38,7 +38,14 @@ adduser -M --system -g www-data www-data
 \cp $(pwd)/dockerfiles/verify_packages/nginx.conf /etc/nginx/nginx.conf
 
 # Installing dd-trace-php
-rpm -ivh $(pwd)/build/packages/*.rpm
+INSTALL_TYPE="${INSTALL_TYPE:-php_installer}"
+if [ "$INSTALL_TYPE" = "native_package" ]; then
+    echo "Installing dd-trace-php using the OS-specific package installer"
+    rpm -ivh $(pwd)/build/packages/*.rpm
+else
+    echo "Installing dd-trace-php using the new PHP installer"
+    php datadog-setup.php --file $(pwd)/build/packages/dd-library-php-x86_64-linux-gnu.tar.gz --php-bin all
+fi
 
 # Starting services
 php-fpm

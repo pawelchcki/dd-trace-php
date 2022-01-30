@@ -6,7 +6,9 @@
 #include "engine_hooks.h"  // for ddtrace_backup_error_handling
 #include "handlers_internal.h"
 #include "logging.h"
+#include "priority_sampling/priority_sampling.h"
 #include "span.h"
+#include "tracer_tag_propagation/tracer_tag_propagation.h"
 
 // True global - only modify during MINIT/MSHUTDOWN
 bool dd_ext_curl_loaded = false;
@@ -18,14 +20,14 @@ zend_long dd_const_curlopt_httpheader = 0;
 ZEND_TLS int le_curl = 0;
 
 ZEND_TLS HashTable *dd_headers = NULL;
-ZEND_TLS bool dd_should_save_headers = true;
-ZEND_TLS zend_function *dd_curl_inject_fn_proxy = NULL;
-ZEND_TLS zend_string *dd_inject_func = NULL;
 
 // Multi-handle API: curl_multi_*()
 ZEND_TLS HashTable *dd_multi_handles = NULL;
 ZEND_TLS HashTable *dd_multi_handles_cache = NULL;
 ZEND_TLS zend_long dd_multi_handles_cache_id = 0;
+
+static zend_class_entry dd_curl_wrap_handler_ce;
+static zend_object_handlers dd_curl_wrap_handler_handlers;
 
 static void (*dd_curl_close_handler)(INTERNAL_FUNCTION_PARAMETERS) = NULL;
 static void (*dd_curl_exec_handler)(INTERNAL_FUNCTION_PARAMETERS) = NULL;
@@ -40,11 +42,48 @@ static void (*dd_curl_setopt_handler)(INTERNAL_FUNCTION_PARAMETERS) = NULL;
 static void (*dd_curl_setopt_array_handler)(INTERNAL_FUNCTION_PARAMETERS) = NULL;
 
 static bool dd_load_curl_integration(void) {
-    if (!dd_ext_curl_loaded || DDTRACE_G(disable_in_current_request)) {
+    if (!dd_ext_curl_loaded || !get_DD_TRACE_ENABLED()) {
         return false;
     }
-    return ddtrace_config_distributed_tracing_enabled();
+    return get_DD_DISTRIBUTED_TRACING();
 }
+
+/* We need to track the curl resource liveliness.
+ * The only real way to do so, without relying on the platform ABI, is adding some zval whose destructor gets called on
+ * close. We are limited in our choices what zval to replace: a) the zval must be replaceable at a location reachable
+ * through offsets which are constant on all builds (i.e. every value after "passwd" in php_curl struct is unusable due
+ * to the variable structure offset of all values after it (it depending on CURLOPT_PASSWDFUNCTION)), b) the contents
+ * of the zval must not be accessed or manipulated in non-generic ways. This leaves us with write, write_header and read
+ * functions. We opt for read, given that its default implementation is the simplest one (which we necessarily have to
+ * re-implement ourselves).
+ * Theoretically it would have sufficed to track the liveliness of the multi handles, but these do not provide any way
+ * (e.g. the classical zval whose dtor is invoked) to hook into their destruction. Hence we overcome this by tracking
+ * all easy handles, and conclude, that, when they are freed, the multi handles attached must also have been freed.
+ */
+struct dd_curl_read_stub {
+    zval func_name;
+    zend_fcall_info_cache fci_cache;
+    FILE *fp;
+};
+
+struct dd_curl_handlers_stub {
+    void *write_handler;
+    void *write_headers_handler;
+    struct dd_curl_read_stub *read_handler;
+};
+
+struct dd_curl_stub {
+    void *curl_ptr;
+    struct dd_curl_handlers_stub *handlers;
+};
+
+#define CURL_READ(zv) (((struct dd_curl_stub *)Z_RES_P(zv)->ptr)->handlers->read_handler)
+
+struct dd_curl_wrapper {
+    zend_object std;
+    int res_handle;
+    HashTable multi;
+};
 
 static void dd_ht_dtor(void *pData) {
     HashTable *ht = *((HashTable **)pData);
@@ -81,54 +120,59 @@ static void dd_ch_duplicate_headers(zval *ch_orig, zval *ch_new) {
     }
 }
 
-static void dd_init_headers_arg(zval *arg, zval *ch) {
-    HashTable *retval;
-    ALLOC_HASHTABLE(retval);
-    HashTable *headers = NULL;
-
-    if (dd_headers) {
-        headers = zend_hash_index_find_ptr(dd_headers, Z_RES_HANDLE_P(ch));
-        if (headers) {
-            size_t headers_count = zend_hash_num_elements(headers);
-            zend_hash_init(retval, headers_count, NULL, ZVAL_PTR_DTOR, 0);
-            zend_hash_copy(retval, headers, (copy_ctor_func_t)zval_add_ref);
-        }
-    }
-
-    if (!headers) {
-        zend_hash_init(retval, 0, NULL, ZVAL_PTR_DTOR, 0);
-    }
-    ZVAL_ARR(arg, retval);
-}
-
-static void dd_free_headers_arg(zval *arg) { zend_array_destroy(Z_ARRVAL_P(arg)); }
-
 static int dd_inject_distributed_tracing_headers(zval *ch) {
-    if (dd_inject_func == NULL) {
-        dd_inject_func = zend_string_init(ZEND_STRL("ddtrace\\bridge\\curl_inject_distributed_headers"), 0);
+    zval headers;
+    zend_array *dd_header_array;
+    if (dd_headers && (dd_header_array = zend_hash_index_find_ptr(dd_headers, Z_RES_HANDLE_P(ch)))) {
+        ZVAL_ARR(&headers, zend_array_dup(dd_header_array));
+    } else {
+        array_init(&headers);
     }
-    if (zend_hash_exists(EG(function_table), dd_inject_func)) {
-        zend_function **fn_proxy = &dd_curl_inject_fn_proxy;
-        zval retval = ddtrace_zval_undef();
 
-        zval headers;
-        dd_init_headers_arg(&headers, ch);
-
-        ddtrace_sandbox_backup backup = ddtrace_sandbox_begin();
-        dd_should_save_headers = false;  // Don't save our own HTTP headers
-        // Arg 0: CurlHandle $ch
-        // Arg 1: mixed $value (array of headers)
-        if (ddtrace_call_function(fn_proxy, ZSTR_VAL(dd_inject_func), ZSTR_LEN(dd_inject_func), &retval, 2, ch,
-                                  &headers) == SUCCESS) {
-            zval_ptr_dtor(&retval);
-        } else {
-            ddtrace_log_debug("Could not inject distributed tracing headers");
+    zend_long sampling_priority = ddtrace_fetch_prioritySampling_from_root();
+    if (sampling_priority != DDTRACE_PRIORITY_SAMPLING_UNKNOWN) {
+        add_next_index_str(&headers,
+                           zend_strpprintf(0, "x-datadog-sampling-priority: " ZEND_LONG_FMT, sampling_priority));
+    }
+    zend_string *propagated_tags = ddtrace_format_propagated_tags();
+    if (propagated_tags) {
+        add_next_index_str(&headers, zend_strpprintf(0, "x-datadog-tags: %s", ZSTR_VAL(propagated_tags)));
+        zend_string_release(propagated_tags);
+    }
+    if (DDTRACE_G(trace_id)) {
+        add_next_index_str(&headers, zend_strpprintf(0, "x-datadog-trace-id: %" PRIu64, (DDTRACE_G(trace_id))));
+        if (DDTRACE_G(span_ids_top)) {
+            add_next_index_str(&headers,
+                               zend_strpprintf(0, "x-datadog-parent-id: %" PRIu64, (DDTRACE_G(span_ids_top)->id)));
         }
-        dd_should_save_headers = true;
-        ddtrace_sandbox_end(&backup);
-
-        dd_free_headers_arg(&headers);
+    } else if (DDTRACE_G(span_ids_top)) {
+        ddtrace_log_err("Found span_id without active trace id, skipping sending of x-datadog-parent-id");
     }
+    if (DDTRACE_G(dd_origin)) {
+        add_next_index_str(&headers, zend_strpprintf(0, "x-datadog-origin: %s", ZSTR_VAL(DDTRACE_G(dd_origin))));
+    }
+
+    zend_function *setopt_fn = zend_hash_str_find_ptr(EG(function_table), ZEND_STRL("curl_setopt"));
+
+    // avoiding going through our own function, directly calling curl_setopt
+#if PHP_VERSION_ID < 70400
+    zend_execute_data *call = zend_vm_stack_push_call_frame(ZEND_CALL_TOP_FUNCTION, setopt_fn, 3, NULL, NULL);
+#else
+    zend_execute_data *call = zend_vm_stack_push_call_frame(ZEND_CALL_TOP_FUNCTION, setopt_fn, 3, NULL);
+#endif
+    ZVAL_COPY(ZEND_CALL_ARG(call, 1), ch);
+    ZVAL_LONG(ZEND_CALL_ARG(call, 2), dd_const_curlopt_httpheader);
+    ZVAL_COPY_VALUE(ZEND_CALL_ARG(call, 3), &headers);
+
+    zend_execute_data *ex = EG(current_execute_data);
+    EG(current_execute_data) = call;
+    zval ret;
+    dd_curl_setopt_handler(call, &ret);
+    EG(current_execute_data) = ex;
+
+    zend_vm_stack_free_args(call);
+    zend_vm_stack_free_call_frame(call);
+
     return ZEND_HASH_APPLY_REMOVE;
 }
 
@@ -158,13 +202,11 @@ static void dd_multi_lazy_init_globals(void) {
  * headers on the first call to curl_multi_exec().
  */
 static void dd_multi_add_handle(zval *mh, zval *ch) {
-    HashTable *handles = NULL;
-
     if (UNEXPECTED(!dd_multi_handles)) {
         return;
     }
 
-    handles = zend_hash_index_find_ptr(dd_multi_handles, Z_RES_HANDLE_P(mh));
+    HashTable *handles = zend_hash_index_find_ptr(dd_multi_handles, Z_RES_HANDLE_P(mh));
 
     if (!handles) {
         ALLOC_HASHTABLE(handles);
@@ -177,19 +219,33 @@ static void dd_multi_add_handle(zval *mh, zval *ch) {
     zend_hash_index_update(handles, Z_RES_HANDLE_P(ch), &tmp);
 
     dd_multi_update_cache(mh, handles);
+
+    zval *readfunc = &CURL_READ(ch)->func_name;
+    if (readfunc && Z_TYPE_P(readfunc) == IS_OBJECT && Z_OBJCE_P(readfunc) == &dd_curl_wrap_handler_ce) {
+        struct dd_curl_wrapper *wrapper = (struct dd_curl_wrapper *)Z_OBJ_P(readfunc);
+        zend_hash_index_add_empty_element(&wrapper->multi, Z_RES_HANDLE_P(mh));
+    }
 }
 
 /* Remove a curl handle from the multi-handle map when curl_multi_remove_handle() is called.
  */
 static void dd_multi_remove_handle(zval *mh, zval *ch) {
-    HashTable *handles = NULL;
-
     if (dd_multi_handles) {
-        handles = zend_hash_index_find_ptr(dd_multi_handles, Z_RES_HANDLE_P(mh));
-        dd_multi_update_cache(mh, handles);
+        HashTable *handles = zend_hash_index_find_ptr(dd_multi_handles, Z_RES_HANDLE_P(mh));
         if (handles) {
             zend_hash_index_del(handles, Z_RES_HANDLE_P(ch));
+            if (zend_hash_num_elements(handles)) {
+                dd_multi_update_cache(mh, handles);
+            } else {
+                zend_hash_index_del(dd_multi_handles, Z_RES_HANDLE_P(mh));
+                dd_multi_update_cache(mh, NULL);
+            }
         }
+    }
+    zval *readfunc = &CURL_READ(ch)->func_name;
+    if (readfunc && Z_TYPE_P(readfunc) == IS_OBJECT && Z_OBJCE_P(readfunc) == &dd_curl_wrap_handler_ce) {
+        struct dd_curl_wrapper *wrapper = (struct dd_curl_wrapper *)Z_OBJ_P(readfunc);
+        zend_hash_index_del(&wrapper->multi, Z_RES_HANDLE_P(mh));
     }
 }
 
@@ -200,7 +256,22 @@ static void dd_multi_remove_handle(zval *mh, zval *ch) {
  */
 static void dd_multi_reset(zval *mh) {
     if (dd_multi_handles) {
-        zend_hash_index_del(dd_multi_handles, Z_RES_HANDLE_P(mh));
+        HashTable *handles = zend_hash_index_find_ptr(dd_multi_handles, Z_RES_HANDLE_P(mh));
+        if (handles) {
+            zval *easy_res;
+            ZEND_HASH_FOREACH_VAL(handles, easy_res) {
+                if (dd_is_valid_curl_resource(easy_res)) {
+                    zval *readfunc = &CURL_READ(easy_res)->func_name;
+                    if (readfunc && Z_TYPE_P(readfunc) == IS_OBJECT &&
+                        Z_OBJCE_P(readfunc) == &dd_curl_wrap_handler_ce) {
+                        struct dd_curl_wrapper *wrapper = (struct dd_curl_wrapper *)Z_OBJ_P(readfunc);
+                        zend_hash_index_del(&wrapper->multi, Z_RES_HANDLE_P(mh));
+                    }
+                }
+            }
+            ZEND_HASH_FOREACH_END();
+            zend_hash_index_del(dd_multi_handles, Z_RES_HANDLE_P(mh));
+        }
         dd_multi_update_cache(mh, NULL);
     }
 }
@@ -217,6 +288,7 @@ static void dd_multi_inject_headers(zval *mh) {
 
     if (handles && zend_hash_num_elements(handles) > 0) {
         zend_hash_apply(handles, dd_inject_distributed_tracing_headers);
+        dd_multi_reset(mh);
     }
 }
 
@@ -267,6 +339,12 @@ ZEND_FUNCTION(ddtrace_curl_init) {
         }
         if (dd_load_curl_integration()) {
             dd_ch_delete_headers(return_value);
+            zval *read_wrapper = &CURL_READ(return_value)->func_name, new_wrapper;
+            object_init_ex(&new_wrapper, &dd_curl_wrap_handler_ce);
+            /* handle the case of some other extension already pre-populating the value */
+            ZVAL_COPY_VALUE(OBJ_PROP_NUM(Z_OBJ(new_wrapper), 0), read_wrapper);
+            ZVAL_COPY_VALUE(read_wrapper, &new_wrapper);
+            ((struct dd_curl_wrapper *)Z_OBJ_P(read_wrapper))->res_handle = Z_RES_HANDLE_P(return_value);
         }
     }
 }
@@ -328,15 +406,48 @@ ZEND_FUNCTION(ddtrace_curl_multi_remove_handle) {
     dd_curl_multi_remove_handle_handler(INTERNAL_FUNCTION_PARAM_PASSTHRU);
 }
 
+static void dd_wrap_setopt(zval *ch, void (*orig_setopt)(INTERNAL_FUNCTION_PARAMETERS), INTERNAL_FUNCTION_PARAMETERS) {
+    zend_object *read_wrapper = NULL;
+    uint32_t orig_refcount;
+
+    if (ch && dd_is_valid_curl_resource(ch)) {
+        zval *readfunc = &CURL_READ(ch)->func_name;
+        if (readfunc && Z_TYPE_P(readfunc) == IS_OBJECT && Z_OBJCE_P(readfunc) == &dd_curl_wrap_handler_ce) {
+            read_wrapper = Z_OBJ_P(readfunc);
+            /* Addref to prevent triggering dtor in curl setopt logic */
+            orig_refcount = GC_ADDREF(read_wrapper);
+        }
+    }
+
+    orig_setopt(INTERNAL_FUNCTION_PARAM_PASSTHRU);
+
+    if (read_wrapper != NULL) {
+        /* Now that we've backed up the original refcount, we can check whether it was changed during the function call.
+         * If it was freed (rc differing), then we assume that something replaced our wrapper object by a new handler.
+         * In that case we release the old handler and replace it by the new handler, then we put our wrapper back.
+         * Otherwise we just restore the refcount.
+         */
+        if (GC_REFCOUNT(read_wrapper) == orig_refcount) {
+            GC_DELREF(read_wrapper);
+        } else {
+            zval *handler = OBJ_PROP_NUM(read_wrapper, 0);
+            zval_ptr_dtor(handler);
+            ZVAL_COPY_VALUE(handler, &CURL_READ(ch)->func_name);
+            ZVAL_OBJ(&CURL_READ(ch)->func_name, read_wrapper);
+        }
+    }
+}
+
 ZEND_FUNCTION(ddtrace_curl_setopt) {
     zval *ch, *zvalue;
     zend_long option;
+    bool load_integration =
+        dd_load_curl_integration() &&
+        zend_parse_parameters_ex(ZEND_PARSE_PARAMS_QUIET, ZEND_NUM_ARGS(), "rlz", &ch, &option, &zvalue) == SUCCESS;
 
-    dd_curl_setopt_handler(INTERNAL_FUNCTION_PARAM_PASSTHRU);
+    dd_wrap_setopt(load_integration ? ch : NULL, dd_curl_setopt_handler, INTERNAL_FUNCTION_PARAM_PASSTHRU);
 
-    if (dd_load_curl_integration() &&
-        zend_parse_parameters_ex(ZEND_PARSE_PARAMS_QUIET, ZEND_NUM_ARGS(), "rlz", &ch, &option, &zvalue) == SUCCESS &&
-        dd_should_save_headers && Z_TYPE_P(return_value) == IS_TRUE && dd_const_curlopt_httpheader == option &&
+    if (load_integration && Z_TYPE_P(return_value) == IS_TRUE && dd_const_curlopt_httpheader == option &&
         Z_TYPE_P(zvalue) == IS_ARRAY) {
         dd_ch_store_headers(ch, Z_ARRVAL_P(zvalue));
     }
@@ -344,34 +455,125 @@ ZEND_FUNCTION(ddtrace_curl_setopt) {
 
 ZEND_FUNCTION(ddtrace_curl_setopt_array) {
     zval *ch, *arr;
+    bool load_integration =
+        dd_load_curl_integration() &&
+        zend_parse_parameters_ex(ZEND_PARSE_PARAMS_QUIET, ZEND_NUM_ARGS(), "ra", &ch, &arr) == SUCCESS;
 
-    dd_curl_setopt_array_handler(INTERNAL_FUNCTION_PARAM_PASSTHRU);
+    dd_wrap_setopt(load_integration ? ch : NULL, dd_curl_setopt_array_handler, INTERNAL_FUNCTION_PARAM_PASSTHRU);
 
-    if (dd_load_curl_integration() &&
-        zend_parse_parameters_ex(ZEND_PARSE_PARAMS_QUIET, ZEND_NUM_ARGS(), "ra", &ch, &arr) == SUCCESS &&
-        Z_TYPE_P(return_value) == IS_TRUE) {
+    if (load_integration
+        /* We still want to apply the original headers even if the this call
+         * returns false. The call will (mostly) only ever fail for reasons
+         * unrelated to setting CURLOPT_HTTPHEADER (see comment below).
+         */
+        /* && Z_TYPE_P(return_value) == IS_TRUE */) {
         zval *value = zend_hash_index_find(Z_ARRVAL_P(arr), dd_const_curlopt_httpheader);
         if (value && Z_TYPE_P(value) == IS_ARRAY) {
+            /* Although curl_setopt_array() can return false, it is unlikely to
+             * be related to setting CURLOPT_HTTPHEADER. On the PHP side, the
+             * values in the header array are converted to string before passing
+             * to libcurl.
+             * @see https://github.com/php/php-src/blob/b63ea10/ext/curl/interface.c#L2684-L2704
+             *
+             * On the libcurl side, curl_slist_append will only fail when malloc
+             * or strdup fails.
+             * @see https://github.com/curl/curl/blob/ac0a88f/lib/slist.c#L82-L102
+             *
+             * Additionally curl_easy_setopt is unlikely to fail in this case
+             * also, since it is simply updating the pointer to the slist.
+             * @see https://github.com/curl/curl/blob/4d2f800/lib/setopt.c#L672-L677
+             *
+             * The only other reasons curl_easy_setopt can fail appear to be API
+             * related.
+             * @see https://github.com/curl/curl/blob/4d2f800/lib/setopt.c#L2917-L2940
+             *
+             * For these reasons we do not validate the headers before storing
+             * them.
+             */
             dd_ch_store_headers(ch, Z_ARRVAL_P(value));
         }
     }
 }
 
-struct dd_curl_handler {
-    const char *name;
-    size_t name_len;
-    void (**old_handler)(INTERNAL_FUNCTION_PARAMETERS);
-    void (*new_handler)(INTERNAL_FUNCTION_PARAMETERS);
-};
-typedef struct dd_curl_handler dd_curl_handler;
+static zend_internal_function dd_default_curl_read_function;
 
-static void dd_install_handler(dd_curl_handler handler) {
-    zend_function *old_handler;
-    old_handler = zend_hash_str_find_ptr(CG(function_table), handler.name, handler.name_len);
-    if (old_handler != NULL) {
-        *handler.old_handler = old_handler->internal_function.handler;
-        old_handler->internal_function.handler = handler.new_handler;
+ZEND_BEGIN_ARG_INFO_EX(arginfo_dd_default_curl_read, 0, 0, 3)
+ZEND_ARG_INFO(0, ch)
+ZEND_ARG_INFO(0, fp)
+ZEND_ARG_INFO(0, size)
+ZEND_END_ARG_INFO()
+
+static PHP_FUNCTION(dd_default_curl_read) {
+    zval *ch, *fpzv;
+    zend_long size;
+
+    ZEND_PARSE_PARAMETERS_START(3, 3)
+    Z_PARAM_RESOURCE(ch)
+    Z_PARAM_ZVAL(fpzv)
+    Z_PARAM_LONG(size)
+    ZEND_PARSE_PARAMETERS_END();
+
+    FILE *fp = CURL_READ(ch)->fp;
+    if (fp) {
+        /* emulate logic of curl_read() function */
+        zend_string *ret = zend_string_alloc(size, 0);
+        ret = zend_string_truncate(ret, fread(ZSTR_VAL(ret), size, 1, fp), 0);
+        ZSTR_VAL(ret)[ZSTR_LEN(ret)] = 0;
+        RETURN_STR(ret);
     }
+    ZVAL_UNDEF(return_value);
+}
+
+static int dd_curl_wrap_get_closure(zval *obj, zend_class_entry **ce_ptr, zend_function **fptr_ptr,
+                                    zend_object **obj_ptr) {
+    zval *handler = OBJ_PROP_NUM(Z_OBJ_P(obj), 0);
+    if (Z_TYPE_P(handler) > IS_NULL) {
+        zend_fcall_info_cache fcc;
+        zend_is_callable_ex(handler, NULL, 0, NULL, &fcc, NULL);
+
+        *fptr_ptr = fcc.function_handler;
+        *ce_ptr = fcc.called_scope;
+        *obj_ptr = fcc.object;
+    } else {
+        *fptr_ptr = (zend_function *)&dd_default_curl_read_function;
+        *ce_ptr = NULL;
+        *obj_ptr = NULL;
+    }
+    return SUCCESS;
+}
+
+static zend_object *dd_curl_wrap_ctor_obj(zend_class_entry *ce) {
+    struct dd_curl_wrapper *wrapper = emalloc(sizeof(*wrapper));
+    zend_object_std_init(&wrapper->std, ce);
+    object_properties_init(&wrapper->std, ce);
+    wrapper->std.handlers = &dd_curl_wrap_handler_handlers;
+    zend_hash_init(&wrapper->multi, 8, NULL, ZVAL_PTR_DTOR, 0);
+    return &wrapper->std;
+}
+
+static void dd_curl_wrap_dtor_obj(zend_object *obj) {
+    zend_objects_destroy_object(obj);
+
+    struct dd_curl_wrapper *wrapper = (struct dd_curl_wrapper *)obj;
+    if (dd_multi_handles) {
+        zend_ulong multi_res;
+        ZEND_HASH_FOREACH_NUM_KEY(&wrapper->multi, multi_res) {
+            HashTable *handles = zend_hash_index_find_ptr(dd_multi_handles, multi_res);
+            if (handles) {
+                zend_hash_index_del(handles, wrapper->res_handle);
+                if (zend_hash_num_elements(handles) == 0) {
+                    zend_hash_index_del(handles, wrapper->res_handle);
+                }
+            }
+        }
+        ZEND_HASH_FOREACH_END();
+    }
+
+    if (dd_headers) {
+        zend_hash_index_del(dd_headers, wrapper->res_handle);
+    }
+
+    zend_hash_destroy(&wrapper->multi);
 }
 
 /* This function is called during process startup so all of the memory allocations should be
@@ -384,6 +586,25 @@ static void dd_install_handler(dd_curl_handler handler) {
  * @see http://www.phpinternalsbook.com/php7/memory_management/zend_memory_manager.html#common-errors-and-mistakes
  */
 void ddtrace_curl_handlers_startup(void) {
+    dd_default_curl_read_function = (zend_internal_function){
+        .type = ZEND_INTERNAL_FUNCTION,
+        .function_name = zend_new_interned_string(zend_string_init(ZEND_STRL("dd_default_curl_read"), 1)),
+        .num_args = 3,
+        .required_num_args = 3,
+        .arg_info = (zend_internal_arg_info *)(arginfo_dd_default_curl_read + 1),
+        .handler = &PHP_FN(dd_default_curl_read),
+    };
+
+    INIT_NS_CLASS_ENTRY(dd_curl_wrap_handler_ce, "DDTrace", "CurlHandleWrapper", NULL);
+    dd_curl_wrap_handler_ce.type = ZEND_INTERNAL_CLASS;
+    dd_curl_wrap_handler_ce.create_object = dd_curl_wrap_ctor_obj;
+    zend_initialize_class_data(&dd_curl_wrap_handler_ce, false);
+    dd_curl_wrap_handler_ce.info.internal.module = &ddtrace_module_entry;
+    zend_declare_property_null(&dd_curl_wrap_handler_ce, "handler", sizeof("handler") - 1, ZEND_ACC_PUBLIC);
+    memcpy(&dd_curl_wrap_handler_handlers, &std_object_handlers, sizeof(zend_object_handlers));
+    dd_curl_wrap_handler_handlers.get_closure = dd_curl_wrap_get_closure;
+    dd_curl_wrap_handler_handlers.dtor_obj = dd_curl_wrap_dtor_obj;
+
     // if we cannot find ext/curl then do not instrument it
     zend_string *curl = zend_string_init(ZEND_STRL("curl"), 1);
     dd_ext_curl_loaded = zend_hash_exists(&module_registry, curl);
@@ -408,7 +629,7 @@ void ddtrace_curl_handlers_startup(void) {
      * The latter expects the former is already done because it needs a span id for the distributed tracing headers;
      * register them inside-out.
      */
-    dd_curl_handler handlers[] = {
+    dd_zif_handler handlers[] = {
         {ZEND_STRL("curl_close"), &dd_curl_close_handler, ZEND_FN(ddtrace_curl_close)},
         {ZEND_STRL("curl_copy_handle"), &dd_curl_copy_handle_handler, ZEND_FN(ddtrace_curl_copy_handle)},
         {ZEND_STRL("curl_exec"), &dd_curl_exec_handler, ZEND_FN(ddtrace_curl_exec)},
@@ -433,12 +654,11 @@ void ddtrace_curl_handlers_startup(void) {
     }
 }
 
+void ddtrace_curl_handlers_shutdown(void) { ddtrace_free_unregistered_class(&dd_curl_wrap_handler_ce); }
+
 void ddtrace_curl_handlers_rinit(void) {
     le_curl = 0;
     dd_headers = NULL;
-    dd_should_save_headers = true;
-    dd_curl_inject_fn_proxy = NULL;
-    dd_inject_func = NULL;
 
     dd_multi_handles = NULL;
     dd_multi_handles_cache = NULL;
@@ -451,11 +671,6 @@ void ddtrace_curl_handlers_rshutdown(void) {
         zend_hash_destroy(dd_headers);
         FREE_HASHTABLE(dd_headers);
         dd_headers = NULL;
-    }
-    dd_curl_inject_fn_proxy = NULL;
-    if (dd_inject_func) {
-        zend_string_release(dd_inject_func);
-        dd_inject_func = NULL;
     }
 
     if (dd_multi_handles) {

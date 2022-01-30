@@ -2,8 +2,6 @@
 
 namespace DDTrace\Integrations\Laravel;
 
-use DDTrace\Contracts\Span;
-use DDTrace\GlobalTracer;
 use DDTrace\SpanData;
 use DDTrace\Integrations\Integration;
 use DDTrace\Tag;
@@ -15,6 +13,8 @@ use DDTrace\Type;
 class LaravelIntegration extends Integration
 {
     const NAME = 'laravel';
+
+    const UNNAMED_ROUTE = 'unnamed_route';
 
     /**
      * @var string
@@ -46,10 +46,9 @@ class LaravelIntegration extends Integration
             return Integration::NOT_LOADED;
         }
 
-        $rootScope = GlobalTracer::get()->getRootScope();
-        $rootSpan = null;
+        $rootSpan = \DDTrace\root_span();
 
-        if (null === $rootScope || null === ($rootSpan = $rootScope->getSpan())) {
+        if (null === $rootSpan) {
             return Integration::NOT_LOADED;
         }
 
@@ -60,12 +59,12 @@ class LaravelIntegration extends Integration
             'handle',
             function (SpanData $span, $args, $response) use ($rootSpan, $integration) {
                 // Overwriting the default web integration
-                $rootSpan->overwriteOperationName('laravel.request');
-                $integration->addTraceAnalyticsIfEnabledLegacy($rootSpan);
+                $rootSpan->name = 'laravel.request';
+                $integration->addTraceAnalyticsIfEnabled($rootSpan);
                 if (\method_exists($response, 'getStatusCode')) {
-                    $rootSpan->setTag(Tag::HTTP_STATUS_CODE, $response->getStatusCode());
+                    $rootSpan->meta[Tag::HTTP_STATUS_CODE] = $response->getStatusCode();
                 }
-                $rootSpan->setTag(Tag::SERVICE_NAME, $integration->getServiceName());
+                $rootSpan->service = $integration->getServiceName();
 
                 $span->name = 'laravel.application.handle';
                 $span->type = Type::WEB_SERVLET;
@@ -74,28 +73,27 @@ class LaravelIntegration extends Integration
             }
         );
 
-        \DDTrace\trace_method(
+        \DDTrace\hook_method(
             'Illuminate\Routing\Router',
             'findRoute',
-            function (SpanData $span, $args, $route) use ($rootSpan, $integration) {
-                if (null === $route) {
-                    return false;
+            null,
+            function ($This, $scope, $args, $route) use ($rootSpan, $integration) {
+                if (!isset($route)) {
+                    return;
                 }
 
                 list($request) = $args;
 
                 // Overwriting the default web integration
-                $integration->addTraceAnalyticsIfEnabledLegacy($rootSpan);
-                $rootSpan->setTag(
-                    Tag::RESOURCE_NAME,
-                    $route->getActionName() . ' ' . ($route->getName() ?: 'unnamed_route')
-                );
-                $rootSpan->setTag('laravel.route.name', $route->getName());
-                $rootSpan->setTag('laravel.route.action', $route->getActionName());
-                $rootSpan->setTag('http.url', $request->url());
-                $rootSpan->setTag('http.method', $request->method());
+                $integration->addTraceAnalyticsIfEnabled($rootSpan);
+                $routeName = LaravelIntegration::normalizeRouteName($route->getName());
 
-                return false;
+                $rootSpan->resource = $route->getActionName() . ' ' . $routeName;
+
+                $rootSpan->meta['laravel.route.name'] = $routeName;
+                $rootSpan->meta['laravel.route.action'] = $route->getActionName();
+                $rootSpan->meta[Tag::HTTP_URL] = \DDTrace\Private_\util_url_sanitize($request->url());
+                $rootSpan->meta[Tag::HTTP_METHOD] = $request->method();
             }
         );
 
@@ -110,12 +108,11 @@ class LaravelIntegration extends Integration
             }
         );
 
-        \DDTrace\trace_method(
+        \DDTrace\hook_method(
             'Symfony\Component\HttpFoundation\Response',
             'setStatusCode',
-            function (SpanData $span, $args) use ($rootSpan) {
-                $rootSpan->setTag(Tag::HTTP_STATUS_CODE, $args[0]);
-                return false;
+            function ($This, $scope, $args) use ($rootSpan) {
+                $rootSpan->meta[Tag::HTTP_STATUS_CODE] =  $args[0];
             }
         );
 
@@ -161,30 +158,57 @@ class LaravelIntegration extends Integration
                 $span->type = Type::WEB_SERVLET;
                 $span->service = $serviceName;
                 $span->resource = 'Illuminate\Foundation\ProviderRepository::load';
-                $rootSpan->overwriteOperationName('laravel.request');
-                $rootSpan->setTag(Tag::SERVICE_NAME, $serviceName);
+                $rootSpan->name = 'laravel.request';
+                $rootSpan->service = $serviceName;
             }
         );
 
-        \DDTrace\trace_method(
+        \DDTrace\hook_method(
             'Illuminate\Console\Application',
             '__construct',
             function () use ($rootSpan, $integration) {
-                $rootSpan->overwriteOperationName('laravel.artisan');
-                $rootSpan->setTag(
-                    Tag::RESOURCE_NAME,
-                    !empty($_SERVER['argv'][1]) ? 'artisan ' . $_SERVER['argv'][1] : 'artisan'
-                );
-                return false;
+                $rootSpan->name = 'laravel.artisan';
+                $rootSpan->resource = !empty($_SERVER['argv'][1]) ? 'artisan ' . $_SERVER['argv'][1] : 'artisan';
             }
         );
 
-        \DDTrace\trace_method(
+        // renderException is since Symfony 4.4, use "renderThrowable()" instead
+        // Used by Laravel < v7.0
+        \DDTrace\hook_method(
             'Symfony\Component\Console\Application',
             'renderException',
-            function (SpanData $span, $args) use ($rootSpan) {
-                $rootSpan->setError($args[0]);
-                return false;
+            function ($This, $scope, $args) use ($rootSpan, $integration) {
+                $integration->setError($rootSpan, $args[0]);
+            }
+        );
+
+        // Used by Laravel > v7.0
+        // More details: https://github.com/laravel/framework/commit/f81b6ed01fb60580ade8c7fb4386aff4cb4d7719
+        \DDTrace\hook_method(
+            'Symfony\Component\Console\Application',
+            'renderThrowable',
+            function ($This, $scope, $args) use ($rootSpan, $integration) {
+                $integration->setError($rootSpan, $args[0]);
+            }
+        );
+
+        \DDTrace\hook_method(
+            'Illuminate\Foundation\Http\Kernel',
+            'renderException',
+            function ($This, $scope, $args) use ($rootSpan, $integration) {
+                if (empty($rootSpan->exception)) {
+                    $integration->setError($rootSpan, $args[1]);
+                }
+            }
+        );
+
+        \DDTrace\hook_method(
+            'Illuminate\Routing\Pipeline',
+            'handleException',
+            function ($This, $scope, $args) use ($rootSpan, $integration) {
+                if (empty($rootSpan->exception)) {
+                    $integration->setError($rootSpan, $args[1]);
+                }
             }
         );
 
@@ -206,11 +230,38 @@ class LaravelIntegration extends Integration
     /**
      * Tells whether a span is a lumen request.
      *
-     * @param Span $rootSpan
+     * @param SpanData $rootSpan
      * @return bool
      */
-    public function isLumen(Span $rootSpan)
+    public function isLumen(SpanData $rootSpan)
     {
-        return $rootSpan->getOperationName() === 'lumen.request';
+        return $rootSpan->name === 'lumen.request';
+    }
+
+    /**
+     * @param mixed $routeName
+     * @return string
+     */
+    public static function normalizeRouteName($routeName)
+    {
+        if (!\is_string($routeName)) {
+            return LaravelIntegration::UNNAMED_ROUTE;
+        }
+
+        $routeName = \trim($routeName);
+        if ($routeName === '') {
+            return LaravelIntegration::UNNAMED_ROUTE;
+        }
+
+        // Starting with PHP 7, unnamed routes have been given a randomly generated name that we need to
+        // normalize:
+        // https://github.com/laravel/framework/blob/7.x/src/Illuminate/Routing/AbstractRouteCollection.php#L227
+        //
+        // It can also be prefixed with domain name when caching is specified as Route::domain()->group(...);
+        if (\strpos($routeName, 'generated::') !== false) {
+            return LaravelIntegration::UNNAMED_ROUTE;
+        }
+
+        return $routeName;
     }
 }

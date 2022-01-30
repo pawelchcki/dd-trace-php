@@ -54,7 +54,6 @@ final class TextMap implements Propagator
     {
         $traceId = '';
         $spanId = '';
-        $prioritySampling = null;
         $baggageItems = [];
 
         foreach ($carrier as $key => $value) {
@@ -77,9 +76,8 @@ final class TextMap implements Propagator
         if (!$this->setDistributedTraceTraceId($traceId)) {
             return null;
         }
-        $spanId = $this->setDistributedTraceParentId($spanId);
 
-        $spanContext = new SpanContext($traceId, $spanId, null, $baggageItems, true);
+        $spanContext = new SpanContext($traceId, $spanId ?: '', null, $baggageItems, true);
         $this->extractPrioritySampling($spanContext, $carrier);
         $this->extractOrigin($spanContext, $carrier);
         return $spanContext;
@@ -96,7 +94,7 @@ final class TextMap implements Propagator
         if (!$traceId) {
             return false;
         }
-        if (dd_trace_set_trace_id($traceId)) {
+        if (\dd_trace_set_trace_id($traceId)) {
             return true;
         }
         if (\ddtrace_config_debug_enabled()) {
@@ -108,34 +106,6 @@ final class TextMap implements Propagator
             );
         }
         return false;
-    }
-
-    /**
-     * Push the distributed trace's parent ID onto the internal span ID
-     * stack so that it is accessible via dd_trace_peek_span_id()
-     *
-     * @param string $spanId
-     * @return string
-     */
-    private function setDistributedTraceParentId($spanId)
-    {
-        if (!$spanId) {
-            return '';
-        }
-        $pushedSpanId = dd_trace_push_span_id($spanId);
-        if ($pushedSpanId === $spanId) {
-            return $spanId;
-        }
-        if (\ddtrace_config_debug_enabled()) {
-            self::logDebug(
-                'Error parsing distributed trace parent ID: {expected}; using {actual} instead.',
-                [
-                    'expected' => $spanId,
-                    'actual' => $pushedSpanId,
-                ]
-            );
-        }
-        return $pushedSpanId;
     }
 
     /**

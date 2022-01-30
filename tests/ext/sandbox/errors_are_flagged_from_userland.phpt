@@ -1,5 +1,7 @@
 --TEST--
 Errors from userland will be flagged on span
+--ENV--
+DD_TRACE_GENERATE_ROOT_SPAN=0
 --FILE--
 <?php
 use DDTrace\SpanData;
@@ -11,7 +13,7 @@ function testErrorFromUserland()
 
 DDTrace\trace_function('testErrorFromUserland', function (SpanData $span) {
     $span->name = 'testErrorFromUserland';
-    $span->meta = ['error.msg' => 'Foo error'];
+    $span->meta += ['error.msg' => 'Foo error'];
 });
 
 testErrorFromUserland();
@@ -22,11 +24,11 @@ var_dump(dd_trace_serialize_closed_spans());
 testErrorFromUserland()
 array(1) {
   [0]=>
-  array(8) {
+  array(11) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -35,14 +37,29 @@ array(1) {
     string(21) "testErrorFromUserland"
     ["resource"]=>
     string(21) "testErrorFromUserland"
+    ["service"]=>
+    string(36) "errors_are_flagged_from_userland.php"
+    ["type"]=>
+    string(3) "cli"
     ["error"]=>
     int(1)
     ["meta"]=>
-    array(2) {
-      ["error.msg"]=>
-      string(9) "Foo error"
+    array(3) {
       ["system.pid"]=>
       string(%d) "%d"
+      ["error.msg"]=>
+      string(9) "Foo error"
+      ["_dd.p.upstream_services"]=>
+      string(58) "ZXJyb3JzX2FyZV9mbGFnZ2VkX2Zyb21fdXNlcmxhbmQucGhw|1|1|1.000"
+    }
+    ["metrics"]=>
+    array(3) {
+      ["_dd.rule_psr"]=>
+      float(1)
+      ["_sampling_priority_v1"]=>
+      float(1)
+      ["php.compilation.total_time_ms"]=>
+      float(%f)
     }
   }
 }

@@ -54,6 +54,8 @@ Zend/tests/bug79155.phpt
 Zend/tests/bug79778.phpt
 Zend/tests/bug79862.phpt
 Zend/tests/bug80037.phpt
+Zend/tests/bug80194.phpt
+Zend/tests/bug81104.phpt
 Zend/tests/class_alias_020.phpt
 Zend/tests/class_name_as_scalar.phpt
 Zend/tests/closure_058.phpt
@@ -79,6 +81,7 @@ Zend/tests/list_keyed_conversions.phpt
 Zend/tests/modify_isref_value_return.phpt
 Zend/tests/multibyte/multibyte_encoding_004.phpt
 Zend/tests/object_array_cast.phpt
+Zend/tests/object_gc_in_shutdown.phpt
 Zend/tests/objects_019.phpt
 Zend/tests/objects_032.phpt
 Zend/tests/offset_array.phpt
@@ -136,6 +139,8 @@ Zend/tests/type_declarations/variance/class_order_autoload_error6.phpt
 Zend/tests/weakrefs/weakrefs_001.phpt
 ext/curl/tests/bug45161.phpt
 ext/curl/tests/bug64267.phpt
+ext/curl/tests/bug76675.phpt
+ext/curl/tests/bug77535.phpt
 ext/curl/tests/bug79033.phpt
 ext/date/tests/012.phpt
 ext/date/tests/013.phpt
@@ -156,6 +161,7 @@ ext/date/tests/date_time_fractions_serialize.phpt
 ext/date/tests/date_timestamp_set_nullparam2.phpt
 ext/date/tests/test-parse-from-format.phpt
 ext/fileinfo/tests/finfo_open_error.phpt
+ext/ftp/tests
 ext/json/tests/bug45791.phpt
 ext/json/tests/bug77843.phpt
 ext/json/tests/json_decode_exceptions.phpt
@@ -181,6 +187,7 @@ ext/openssl/tests/capture_peer_cert_001.phpt
 ext/openssl/tests/openssl_encrypt_ccm.phpt
 ext/openssl/tests/openssl_peer_fingerprint_basic.phpt
 ext/openssl/tests/openssl_pkcs7_decrypt_error.phpt
+ext/openssl/tests/openssl_x509_checkpurpose_basic.phpt
 ext/openssl/tests/peer_verification.phpt
 ext/openssl/tests/san_peer_matching.phpt
 ext/openssl/tests/session_meta_capture.phpt
@@ -202,7 +209,16 @@ ext/openssl/tests/tlsv1.0_wrapper.phpt
 ext/openssl/tests/tlsv1.1_wrapper.phpt
 ext/openssl/tests/tlsv1.2_wrapper.phpt
 ext/openssl/tests/tlsv1.3_wrapper.phpt
+ext/pcntl/tests/pcntl_unshare_01.phpt
+ext/pcntl/tests/pcntl_unshare_03.phpt
+ext/pdo_sqlite/tests/bug43831.phpt
+ext/pdo_sqlite/tests/bug44327_2.phpt
+ext/pdo_sqlite/tests/bug44327_3.phpt
+ext/pdo_sqlite/tests/bug48773.phpt
+ext/pdo_sqlite/tests/pdo_fetch_func_001.phpt
 ext/pdo_sqlite/tests/pdo_sqlite_lastinsertid.phpt
+ext/pdo/tests/pdo_023.phpt
+ext/pdo/tests/pdo_030.phpt
 ext/phar/tests/031.phpt
 ext/phar/tests/032.phpt
 ext/phar/tests/bug69720.phpt
@@ -245,6 +261,7 @@ ext/simplexml/tests/bug72971.phpt
 ext/simplexml/tests/bug72971_2.phpt
 ext/simplexml/tests/bug75245.phpt
 ext/simplexml/tests/simplexml_load_file.phpt
+ext/sockets/tests/socket_create_pair.phpt
 ext/sodium/tests/utils.phpt
 ext/spl/tests/ArrayObject_clone_other_std_props.phpt
 ext/spl/tests/ArrayObject_dump_during_sort.phpt
@@ -383,7 +400,11 @@ ext/standard/tests/serialize/serialize_globals_var_refs.phpt
 ext/standard/tests/serialize/sleep_uninitialized_typed_prop.phpt
 ext/standard/tests/serialize/typed_property_refs.phpt
 ext/standard/tests/streams/bug78902.phpt
+ext/standard/tests/streams/proc_open_bug69900.phpt
+ext/standard/tests/streams/stream_context_tcp_nodelay_fopen.phpt
 ext/standard/tests/strings/implode1.phpt
+ext/zip/tests/bug38943.phpt
+ext/zip/tests/bug38943_2.phpt
 sapi/cli/tests/upload_2G.phpt
 sapi/fpm/tests/log-bm-in-shutdown-fn.phpt
 sapi/fpm/tests/log-bm-limit-1024-msg-80.phpt

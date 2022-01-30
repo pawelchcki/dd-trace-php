@@ -39,3 +39,5 @@ array(2) {
   resource(%d) of type (stream-context)
 }
 bool(false)
+
+Successfully triggered flush with trace of size 1

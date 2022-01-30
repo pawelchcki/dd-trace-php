@@ -11,7 +11,7 @@ use Exception;
 use InvalidArgumentException;
 use Throwable;
 
-final class Span extends DataSpan
+class Span extends DataSpan
 {
     private static $metricNames = [ Tag::ANALYTICS_KEY => true ];
     // associative array for quickly checking if tag has special meaning, should include metric_names
@@ -31,24 +31,13 @@ final class Span extends DataSpan
 
     /**
      * Span constructor.
-     * @param string $operationName
+     * @param SpanData $internalSpan
      * @param SpanContext $context
-     * @param string $service
-     * @param string $resource
-     * @param int|null $startTime
      */
-    public function __construct(
-        $operationName,
-        SpanContext $context,
-        $service,
-        $resource,
-        $startTime = null
-    ) {
+    public function __construct(SpanData $internalSpan, SpanContext $context)
+    {
+        $this->internalSpan = $internalSpan;
         $this->context = $context;
-        $this->operationName = (string)$operationName;
-        $this->service = (string)$service;
-        $this->resource = null === $resource ? null : (string)$resource;
-        $this->startTime = $startTime ?: Time::now();
     }
 
     /**
@@ -80,7 +69,7 @@ final class Span extends DataSpan
      */
     public function overwriteOperationName($operationName)
     {
-        $this->operationName = $operationName;
+        $this->internalSpan->name = $operationName;
     }
 
     /**
@@ -88,7 +77,7 @@ final class Span extends DataSpan
      */
     public function getResource()
     {
-        return $this->resource;
+        return $this->internalSpan->resource;
     }
 
     /**
@@ -96,7 +85,7 @@ final class Span extends DataSpan
      */
     public function getService()
     {
-        return $this->service;
+        return $this->internalSpan->service;
     }
 
     /**
@@ -104,7 +93,7 @@ final class Span extends DataSpan
      */
     public function getType()
     {
-        return $this->type;
+        return $this->internalSpan->type;
     }
 
     /**
@@ -112,7 +101,8 @@ final class Span extends DataSpan
      */
     public function getStartTime()
     {
-        return $this->startTime;
+        // internally we have nanoseconds, but we'll expose microseconds here
+        return (int) ($this->startTime / 1000);
     }
 
     /**
@@ -120,7 +110,8 @@ final class Span extends DataSpan
      */
     public function getDuration()
     {
-        return $this->duration;
+        // internally we have nanoseconds, but we'll expose microseconds here
+        return (int) ($this->duration / 1000);
     }
 
     /**
@@ -128,9 +119,10 @@ final class Span extends DataSpan
      */
     public function setTag($key, $value, $setIfFinished = false)
     {
-        if ($this->duration !== null && !$setIfFinished) { // if finished
+        if ($this->isFinished() && !$setIfFinished) { // if finished
             return;
         }
+
         if ($key !== (string)$key) {
             throw InvalidSpanArgument::forTagKey($key);
         }
@@ -147,13 +139,13 @@ final class Span extends DataSpan
             }
 
             if ($key === Tag::ERROR_MSG) {
-                $this->tags[$key] = (string)$value;
+                $this->internalSpan->meta[$key] = (string)$value;
                 $this->setError(true);
                 return;
             }
 
             if ($key === Tag::SERVICE_NAME) {
-                $this->service = $value;
+                $this->internalSpan->service = $value;
                 return;
             }
 
@@ -168,12 +160,12 @@ final class Span extends DataSpan
             }
 
             if ($key === Tag::RESOURCE_NAME) {
-                $this->resource = (string)$value;
+                $this->internalSpan->resource = (string)$value;
                 return;
             }
 
             if ($key === Tag::SPAN_TYPE) {
-                $this->type = $value;
+                $this->internalSpan->type = $value;
                 return;
             }
 
@@ -183,8 +175,8 @@ final class Span extends DataSpan
 
             if ($key === Tag::HTTP_STATUS_CODE && $value >= 500) {
                 $this->hasError = true;
-                if (!isset($this->tags[Tag::ERROR_TYPE])) {
-                    $this->tags[Tag::ERROR_TYPE] = 'Internal Server Error';
+                if (!isset($this->internalSpan->meta[Tag::ERROR_TYPE])) {
+                    $this->internalSpan->meta[Tag::ERROR_TYPE] = 'Internal Server Error';
                 }
             }
 
@@ -199,7 +191,7 @@ final class Span extends DataSpan
             }
         }
 
-        $this->tags[$key] = (string)$value;
+        $this->internalSpan->meta[$key] = (string)$value;
     }
 
     /**
@@ -207,8 +199,8 @@ final class Span extends DataSpan
      */
     public function getTag($key)
     {
-        if (array_key_exists($key, $this->tags)) {
-            return $this->tags[$key];
+        if (isset($this->internalSpan->meta) && array_key_exists($key, $this->internalSpan->meta)) {
+            return $this->internalSpan->meta[$key];
         }
 
         return null;
@@ -219,7 +211,7 @@ final class Span extends DataSpan
      */
     public function getAllTags()
     {
-        return $this->tags;
+        return isset($this->internalSpan->meta) ? $this->internalSpan->meta : [];
     }
 
     /**
@@ -237,11 +229,11 @@ final class Span extends DataSpan
     public function setMetric($key, $value)
     {
         if ($key === Tag::ANALYTICS_KEY) {
-            TraceAnalyticsProcessor::normalizeAnalyticsValue($this->metrics, $value);
+            TraceAnalyticsProcessor::normalizeAnalyticsValue($this->internalSpan->metrics, $value);
             return;
         }
 
-        $this->metrics[$key] = $value;
+        $this->internalSpan->metrics[$key] = $value;
     }
 
     /**
@@ -249,7 +241,7 @@ final class Span extends DataSpan
      */
     public function getMetrics()
     {
-        return $this->metrics;
+        return isset($this->internalSpan->metrics) ? $this->internalSpan->metrics : [];
     }
 
     /**
@@ -257,7 +249,7 @@ final class Span extends DataSpan
      */
     public function setResource($resource)
     {
-        $this->resource = (string)$resource;
+        $this->internalSpan->resource = (string)$resource;
     }
 
     /**
@@ -265,16 +257,16 @@ final class Span extends DataSpan
      * updated and the error.Error() string is included with a default tag key.
      * If the Span has been finished, it will not be modified by this method.
      *
-     * @param Throwable|Exception|bool|string|null $error
+     * @param Throwable|Exception|bool|null $error
      * @throws InvalidArgumentException
      */
     public function setError($error)
     {
         if (($error instanceof Exception) || ($error instanceof Throwable)) {
             $this->hasError = true;
-            $this->tags[Tag::ERROR_MSG] = $error->getMessage();
-            $this->tags[Tag::ERROR_TYPE] = get_class($error);
-            $this->tags[Tag::ERROR_STACK] = $error->getTraceAsString();
+            $this->internalSpan->meta[Tag::ERROR_MSG] = $error->getMessage();
+            $this->internalSpan->meta[Tag::ERROR_TYPE] = get_class($error);
+            $this->internalSpan->meta[Tag::ERROR_STACK] = $error->getTraceAsString();
             return;
         }
 
@@ -297,8 +289,8 @@ final class Span extends DataSpan
     public function setRawError($message, $type)
     {
         $this->hasError = true;
-        $this->tags[Tag::ERROR_MSG] = $message;
-        $this->tags[Tag::ERROR_TYPE] = $type;
+        $this->internalSpan->meta[Tag::ERROR_MSG] = $message;
+        $this->internalSpan->meta[Tag::ERROR_TYPE] = $type;
     }
 
     public function hasError()
@@ -311,23 +303,9 @@ final class Span extends DataSpan
      */
     public function finish($finishTime = null)
     {
-        if ($this->duration !== null) { // if finished
-            return;
+        if (!$this->isFinished()) {
+            close_span($finishTime ?: 0);
         }
-
-        $this->duration = ($finishTime ?: Time::now()) - $this->startTime;
-        // Sync with span ID stack at the C level
-        dd_trace_pop_span_id();
-    }
-
-    /**
-     * @param Throwable|Exception $error
-     * @return void
-     */
-    public function finishWithError($error)
-    {
-        $this->setError($error);
-        $this->finish();
     }
 
     /**
@@ -335,7 +313,7 @@ final class Span extends DataSpan
      */
     public function isFinished()
     {
-        return $this->duration !== null;
+        return $this->duration !== 0;
     }
 
     /**
@@ -343,7 +321,7 @@ final class Span extends DataSpan
      */
     public function getOperationName()
     {
-        return $this->operationName;
+        return $this->internalSpan->name;
     }
 
     /**
@@ -365,14 +343,15 @@ final class Span extends DataSpan
             } elseif ($key === Tag::LOG_ERROR || $key === Tag::LOG_ERROR_OBJECT) {
                 $this->setError($value);
             } elseif ($key === Tag::LOG_MESSAGE) {
-                // We recently changed our span behavior: when we set an error message, we now mark the span as 'error'.
+                // We recently changed our span behavior:
+                // when we set an error message, we now mark the span as 'error'.
                 // In order to be backward compatible with this publicly exposed method we manually set the message,
                 // and not the errror, internally.
                 // This should be considered a broken behavior because it would not allow for users to log multiple
                 // messages, and logging multiple messages is not prohibited by the OpenTracing spec:
                 // https://opentracing.io/docs/overview/tags-logs-baggage/#logs
                 // We want to deprecate this behavior and change it. In the meantime we apply this workaround.
-                $this->tags[Tag::ERROR_MSG] = (string)$value;
+                $this->internalSpan->meta[Tag::ERROR_MSG] = (string)$value;
             } elseif ($key === Tag::LOG_STACK) {
                 $this->setTag(Tag::ERROR_STACK, $value);
             }
@@ -404,20 +383,21 @@ final class Span extends DataSpan
     }
 
     /**
+     * @deprecated
      * @param bool $value
      * @return self
      */
     public function setTraceAnalyticsCandidate($value = true)
     {
-        $this->isTraceAnalyticsCandidate = $value;
         return $this;
     }
 
     /**
+     * @deprecated
      * @return bool
      */
     public function isTraceAnalyticsCandidate()
     {
-        return $this->isTraceAnalyticsCandidate;
+        return false;
     }
 }

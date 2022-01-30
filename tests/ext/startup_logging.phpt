@@ -6,7 +6,7 @@ Startup logging is enabled by default
 --FILE--
 <?php
 include_once 'startup_logging.inc';
-$logs = dd_get_startup_logs(['-dddtrace.request_init_hook='], ['DD_TRACE_DEBUG=1']);
+$logs = dd_get_startup_logs(['-ddatadog.trace.request_init_hook='], ['DD_TRACE_DEBUG=1']);
 
 // Ignore any Agent connection errors for now
 unset($logs['agent_error']);
@@ -14,7 +14,7 @@ unset($logs['agent_error']);
 dd_dump_startup_logs($logs);
 ?>
 --EXPECTF--
-ddtrace.request_init_hook_reachable: false
+datadog.trace.request_init_hook_reachable: false
 date: "%s"
 os_name: "%s"
 os_version: "%s"
@@ -28,16 +28,16 @@ enabled_cli: %s
 agent_url: "%s"
 debug: true
 analytics_enabled: false
-sample_rate: 1.0000
-sampling_rules: null
-tags: null
-service_mapping: null
+sample_rate: 1
+sampling_rules: []
+tags: []
+service_mapping: []
 distributed_tracing_enabled: true
 priority_sampling_enabled: true
 dd_version: null
 architecture: "%s"
 sapi: "cgi-fcgi"
-ddtrace.request_init_hook: null
+datadog.trace.request_init_hook: null
 open_basedir_configured: false
 uri_fragment_regex: null
 uri_mapping_incoming: null
@@ -49,6 +49,6 @@ measure_compile_time: true
 report_hostname_on_root_span: false
 traced_internal_functions: null
 auto_prepend_file_configured: false
-integrations_disabled: null
+integrations_disabled: "default"
 enabled_from_env: true
 opcache.file_cache: null

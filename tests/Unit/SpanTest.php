@@ -4,6 +4,7 @@ namespace DDTrace\Tests\Unit;
 
 use DDTrace\Span;
 use DDTrace\SpanContext;
+use DDTrace\SpanData;
 use DDTrace\Tag;
 use DDTrace\Sampling\PrioritySampling;
 use DDTrace\Tracer;
@@ -41,10 +42,15 @@ final class SpanTest extends BaseTestCase
         $this->tracer = new Tracer();
         $this->oldTracer = \DDTrace\GlobalTracer::get();
         \DDTrace\GlobalTracer::set($this->tracer);
+        self::putenv('DD_TRACE_GENERATE_ROOT_SPAN=0');
+        dd_trace_internal_fn('ddtrace_reload_config');
     }
+
     protected function ddTearDown()
     {
         \DDTrace\GlobalTracer::set($this->oldTracer);
+        dd_trace_serialize_closed_spans();
+        self::putenv('DD_TRACE_GENERATE_ROOT_SPAN');
     }
 
     public function testCreateSpanSuccess()
@@ -67,7 +73,7 @@ final class SpanTest extends BaseTestCase
 
     public function testSpanTagsRemainImmutableAfterFinishing()
     {
-        $span = $this->createSpan();
+        $span = $this->createSpan(true);
         $span->finish();
 
         $span->setTag(self::TAG_KEY, self::TAG_VALUE);
@@ -177,7 +183,7 @@ final class SpanTest extends BaseTestCase
 
     public function testSpanErrorRemainsMutableAfterFinishing()
     {
-        $span = $this->createSpan();
+        $span = $this->createSpan(true);
         $span->finish();
 
         $span->setError(new Exception());
@@ -236,7 +242,6 @@ final class SpanTest extends BaseTestCase
     public function testForceTracingTagKeepsTrace()
     {
         $span = $this->createSpan();
-        $this->assertSame(PrioritySampling::UNKNOWN, $this->tracer->getPrioritySampling());
         $span->setTag(Tag::MANUAL_KEEP, null);
         $this->assertSame(PrioritySampling::USER_KEEP, $this->tracer->getPrioritySampling());
     }
@@ -244,9 +249,11 @@ final class SpanTest extends BaseTestCase
     public function testForceDropTracingTagRejectsTrace()
     {
         $span = $this->createSpan();
-        $this->assertSame(PrioritySampling::UNKNOWN, $this->tracer->getPrioritySampling());
         $span->setTag(Tag::MANUAL_DROP, null);
         $this->assertSame(PrioritySampling::USER_REJECT, $this->tracer->getPrioritySampling());
+
+        // reset default
+        \DDTrace\set_priority_sampling(PrioritySampling::USER_KEEP, true);
     }
 
     public function testHasTag()
@@ -264,16 +271,6 @@ final class SpanTest extends BaseTestCase
         $span->setMetric('exists', 1.0);
 
         $this->assertSame(1.0, $span->getMetrics()['exists']);
-    }
-
-    public function testIsTraceAnalyticsConfigCandidate()
-    {
-        $span = $this->createSpan();
-        $this->assertFalse($span->isTraceAnalyticsCandidate());
-        $span->setTraceAnalyticsCandidate();
-        $this->assertTrue($span->isTraceAnalyticsCandidate());
-        $span->setTraceAnalyticsCandidate(false);
-        $this->assertFalse($span->isTraceAnalyticsCandidate());
     }
 
     public function testTraceAnalyticsConfigEnabledByTag()
@@ -333,16 +330,15 @@ final class SpanTest extends BaseTestCase
         $this->assertSame([1710563033, 2041643438], $randInts);
     }
 
-    private function createSpan()
+    private function createSpan($realSpan = false)
     {
         $context = SpanContext::createAsRoot();
 
-        $span = new Span(
-            self::OPERATION_NAME,
-            $context,
-            self::SERVICE,
-            self::RESOURCE
-        );
+        $internalSpan = $realSpan ? \DDTrace\start_span() : new SpanData();
+        $internalSpan->name = self::OPERATION_NAME;
+        $internalSpan->service = self::SERVICE;
+        $internalSpan->resource = self::RESOURCE;
+        $span = new Span($internalSpan, $context);
 
         return $span;
     }

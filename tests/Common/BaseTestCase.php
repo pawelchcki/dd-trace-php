@@ -7,6 +7,15 @@ use DDTrace\Log\Logger;
 use DDTrace\Tests\DebugLogger;
 use DDTrace\Util\Versions;
 
+/**
+ * @method void assertArrayHasKey(mixed $key, array $arr)
+ * @method void assertContains(mixed $needle, iterable $haystack)
+ * @method void assertEmpty(array $arr)
+ * @method void assertFalse(boolean $value)
+ * @method void assertNotEmpty(array $arr)
+ * @method void assertSame(mixed $expected, array $value)
+ * @method void assertTrue(boolean $value)
+ */
 abstract class BaseTestCase extends MultiPHPUnitVersionAdapter
 {
     public static function ddSetUpBeforeClass()
@@ -24,7 +33,9 @@ abstract class BaseTestCase extends MultiPHPUnitVersionAdapter
     protected function ddTearDown()
     {
         \Mockery::close();
-        Logger::reset();
+        if (\class_exists('DDTrace\Log\Logger')) {
+            Logger::reset();
+        }
         \dd_trace_internal_fn('ddtrace_reload_config');
     }
 
@@ -44,6 +55,24 @@ abstract class BaseTestCase extends MultiPHPUnitVersionAdapter
         return $logger;
     }
 
+    protected static function putEnv($putenv)
+    {
+        // cleanup: properly replace this function by ini_set() in test code ...
+        if (strpos($putenv, "DD_") === 0) {
+            $val = explode("=", $putenv, 2);
+            $name = strtolower(strtr($val[0], [
+                "DD_TRACE_" => "datadog.trace.",
+                "DD_" => "datadog.",
+            ]));
+            if (count($val) > 1) {
+                \ini_set($name, $val[1]);
+            } else {
+                \ini_restore($name);
+            }
+        }
+        \putenv($putenv);
+    }
+
     /**
      * Reloads configuration setting first the envs in $putenvs
      *
@@ -53,7 +82,7 @@ abstract class BaseTestCase extends MultiPHPUnitVersionAdapter
     protected function putEnvAndReloadConfig($putenvs = [])
     {
         foreach ($putenvs as $putenv) {
-            \putenv($putenv);
+            self::putEnv($putenv);
         }
         \dd_trace_internal_fn('ddtrace_reload_config');
     }
@@ -83,5 +112,16 @@ abstract class BaseTestCase extends MultiPHPUnitVersionAdapter
         } else {
             parent::setExpectedException($class, $exceptionMessage, $exceptionCode);
         }
+    }
+
+    /**
+     * Tells whether or not an array is associative.
+     *
+     * @param array $input
+     * @return bool
+     */
+    protected static function isListArray(array $input)
+    {
+        return $input === array_values($input);
     }
 }

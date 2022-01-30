@@ -27,7 +27,6 @@ final class Http implements Transport
     // Default values for trace agent configuration
     const DEFAULT_AGENT_HOST = 'localhost';
     const DEFAULT_TRACE_AGENT_PORT = '8126';
-    const DEFAULT_TRACE_AGENT_PATH = '/v0.3/traces';
     const PRIORITY_SAMPLING_TRACE_AGENT_PATH = '/v0.4/traces';
 
     /* Keep these in sync with configuration.h's values */
@@ -73,16 +72,17 @@ final class Http implements Transport
      */
     private function configure($config)
     {
-        $host = getenv(self::AGENT_HOST_ENV) ?: self::DEFAULT_AGENT_HOST;
-        $port = getenv(self::TRACE_AGENT_PORT_ENV) ?: self::DEFAULT_TRACE_AGENT_PORT;
-        $traceAgentUrl = getenv(self::TRACE_AGENT_URL_ENV) ?: "http://${host}:${port}";
-        $path = self::DEFAULT_TRACE_AGENT_PATH;
+        $host = ddtrace_config_read_env_or_ini(self::AGENT_HOST_ENV) ?: self::DEFAULT_AGENT_HOST;
+        $port = ddtrace_config_read_env_or_ini(self::TRACE_AGENT_PORT_ENV) ?: self::DEFAULT_TRACE_AGENT_PORT;
+        $traceAgentUrl = ddtrace_config_read_env_or_ini(self::TRACE_AGENT_URL_ENV) ?: "http://${host}:${port}";
+        $path = self::PRIORITY_SAMPLING_TRACE_AGENT_PATH;
         $endpoint = "${traceAgentUrl}${path}";
 
         $this->config = array_merge([
             'endpoint' => $endpoint,
-            'connect_timeout' => getenv(self::AGENT_CONNECT_TIMEOUT_ENV) ?: self::DEFAULT_AGENT_CONNECT_TIMEOUT,
-            'timeout' => getenv(self::AGENT_TIMEOUT_ENV) ?: self::DEFAULT_AGENT_TIMEOUT,
+            'connect_timeout' => ddtrace_config_read_env_or_ini(self::AGENT_CONNECT_TIMEOUT_ENV)
+                ?: self::DEFAULT_AGENT_CONNECT_TIMEOUT,
+            'timeout' => ddtrace_config_read_env_or_ini(self::AGENT_TIMEOUT_ENV) ?: self::DEFAULT_AGENT_TIMEOUT,
         ], $config);
     }
 
@@ -102,17 +102,9 @@ final class Http implements Transport
              */
         }
 
-        // We keep the endpoint configuration option for backward compatibility instead of moving to an 'agent base url'
-        // concept, but this should be probably revisited in the future.
-        $endpoint = $this->isPrioritySamplingUsed() ? str_replace(
-            self::DEFAULT_TRACE_AGENT_PATH,
-            self::PRIORITY_SAMPLING_TRACE_AGENT_PATH,
-            $this->config['endpoint']
-        ) : $this->config['endpoint'];
-
         self::logDebug('About to send trace(s) to the agent');
 
-        $this->sendRequest($endpoint, $this->headers, $tracesPayload, $tracesCount);
+        $this->sendRequest($this->config['endpoint'], $this->headers, $tracesPayload, $tracesCount);
     }
 
     public function setHeader($key, $value)
@@ -153,7 +145,7 @@ final class Http implements Transport
 
         // Now that bgs is enabled by default, allow disabling it by disabling either option
         $bgsEnabled = \dd_trace_env_config('DD_TRACE_BGS_ENABLED')
-                    && \dd_trace_env_config('DD_TRACE_BETA_SEND_TRACES_VIA_THREAD');
+            && \dd_trace_env_config('DD_TRACE_BETA_SEND_TRACES_VIA_THREAD');
         if (
             $bgsEnabled
             && $this->encoder->getContentType() === 'application/msgpack'
@@ -164,8 +156,8 @@ final class Http implements Transport
 
         if ($this->isLogDebugActive() && function_exists('dd_tracer_circuit_breaker_info')) {
             self::logDebug('circuit breaker status: closed => {closed}, total_failures => {total_failures},'
-            . 'consecutive_failures => {consecutive_failures}, opened_timestamp => {opened_timestamp}, '
-            . 'last_failure_timestamp=> {last_failure_timestamp}', dd_tracer_circuit_breaker_info());
+                . 'consecutive_failures => {consecutive_failures}, opened_timestamp => {opened_timestamp}, '
+                . 'last_failure_timestamp=> {last_failure_timestamp}', dd_tracer_circuit_breaker_info());
         }
 
         if (function_exists('dd_tracer_circuit_breaker_can_try') && !dd_tracer_circuit_breaker_can_try()) {

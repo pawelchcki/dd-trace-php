@@ -8,8 +8,11 @@ ddtrace.request_init_hook={PWD}/distributed_tracing_curl_inject.inc
 --ENV--
 DD_TRACE_DEBUG=1
 DD_TRACE_TRACED_INTERNAL_FUNCTIONS=curl_exec
+HTTP_X_DATADOG_ORIGIN=phpt-test
 --FILE--
 <?php
+include 'curl_helper.inc';
+
 DDTrace\trace_function('curl_exec', function (\DDTrace\SpanData $span) {
     $span->name = 'curl_exec';
 });
@@ -28,7 +31,9 @@ curl_setopt_array($ch, [
 
 $responses = [];
 $responses[] = curl_exec($ch);
+show_curl_error_on_fail($ch);
 $responses[] = curl_exec($ch);
+show_curl_error_on_fail($ch);
 curl_close($ch);
 
 include 'distributed_tracing.inc';
@@ -45,6 +50,7 @@ foreach ($responses as $key => $response) {
 }
 
 echo 'Done.' . PHP_EOL;
+
 ?>
 --EXPECTF--
 Response #0
@@ -60,3 +66,4 @@ x-mas: tree
 x-my-custom-header: foo
 
 Done.
+Successfully triggered flush with trace of size 3

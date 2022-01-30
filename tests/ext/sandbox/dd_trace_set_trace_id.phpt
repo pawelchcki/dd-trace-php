@@ -3,6 +3,7 @@ Set the trace ID from userland
 --ENV--
 DD_TRACE_DEBUG_PRNG_SEED=42
 DD_TRACE_TRACED_INTERNAL_FUNCTIONS=array_sum
+DD_TRACE_GENERATE_ROOT_SPAN=0
 --FILE--
 <?php
 use DDTrace\SpanData;
@@ -37,12 +38,12 @@ bool(true)
 100
 int(2)
 Name: array_sum
-Span ID: 6965080426129060204
+Span ID: 13930160852258120406
 Trace ID: 42
 Parent ID: 100
 *Flushed spans*
 int(2)
 Name: array_sum
-Span ID: 5894024288751747413
-Trace ID: 5894024288751747413
+Span ID: 13874630024467741450
+Trace ID: 13874630024467741450
 Parent ID: (empty)

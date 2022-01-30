@@ -4,6 +4,7 @@
 <?php if (PHP_VERSION_ID < 70000) die('skip: Prehook not supported on PHP 5'); ?>
 --ENV--
 DD_TRACE_TRACED_INTERNAL_FUNCTIONS=mt_rand
+DD_TRACE_GENERATE_ROOT_SPAN=0
 --FILE--
 <?php
 use DDTrace\SpanData;
@@ -47,10 +48,10 @@ DDTrace\trace_method(
         $span->resource = 'FooResource';
         $span->service = 'FooService';
         $span->type = 'FooType';
-        $span->meta = [
+        $span->meta += [
             'args.0' => isset($args[0]) ? $args[0] : '',
         ];
-        $span->metrics = [
+        $span->metrics += [
             'foo' => isset($args[1][1]) ? $args[1][1] : '',
             'bar' => isset($args[1][2]) ? $args[1][2] : '',
         ];
@@ -70,7 +71,7 @@ $testService = new TestService();
 $testService->testServiceFoo();
 
 $foo = new Foo();
-$ret = $foo->bar('tracing is awesome', ['first', 'foo-red', 'bar-green']);
+$ret = $foo->bar('tracing is awesome', ['first', '100', false]);
 var_dump($ret);
 
 echo "---\n";
@@ -95,9 +96,9 @@ array(3) {
   [0]=>
   array(10) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -111,28 +112,36 @@ array(3) {
     ["type"]=>
     string(7) "FooType"
     ["meta"]=>
-    array(2) {
-      ["args.0"]=>
-      string(18) "tracing is awesome"
+    array(3) {
       ["system.pid"]=>
       string(%d) "%d"
+      ["args.0"]=>
+      string(18) "tracing is awesome"
+      ["_dd.p.upstream_services"]=>
+      string(24) "Rm9vU2VydmljZQ|1|1|1.000"
     }
     ["metrics"]=>
-    array(2) {
+    array(5) {
       ["foo"]=>
-      string(7) "foo-red"
+      float(100)
       ["bar"]=>
-      string(9) "bar-green"
+      float(0)
+      ["_dd.rule_psr"]=>
+      float(1)
+      ["_sampling_priority_v1"]=>
+      float(1)
+      ["php.compilation.total_time_ms"]=>
+      float(%f)
     }
   }
   [1]=>
-  array(8) {
+  array(10) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["parent_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -141,6 +150,10 @@ array(3) {
     string(2) "MT"
     ["resource"]=>
     string(2) "MT"
+    ["service"]=>
+    string(10) "FooService"
+    ["type"]=>
+    string(7) "FooType"
     ["meta"]=>
     array(1) {
       ["rand.range"]=>
@@ -148,11 +161,11 @@ array(3) {
     }
   }
   [2]=>
-  array(7) {
+  array(10) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -161,10 +174,25 @@ array(3) {
     string(7) "TestFoo"
     ["resource"]=>
     string(7) "TestFoo"
+    ["service"]=>
+    string(19) "dd_trace_method.php"
+    ["type"]=>
+    string(3) "cli"
     ["meta"]=>
-    array(1) {
+    array(2) {
       ["system.pid"]=>
       string(%d) "%d"
+      ["_dd.p.upstream_services"]=>
+      string(36) "ZGRfdHJhY2VfbWV0aG9kLnBocA|1|1|1.000"
+    }
+    ["metrics"]=>
+    array(3) {
+      ["_dd.rule_psr"]=>
+      float(1)
+      ["_sampling_priority_v1"]=>
+      float(1)
+      ["php.compilation.total_time_ms"]=>
+      float(%f)
     }
   }
 }

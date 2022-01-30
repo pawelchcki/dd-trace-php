@@ -1,6 +1,17 @@
 FROM centos:6
 
+# Letsencrpypt root certificate was crossigned by DST Root CA X3 which expired on 2021-09-30, we now need our own cert
+#   - details    : https://letsencrypt.org/docs/dst-root-ca-x3-expiration-september-2021/
+#   - x1 root    : https://letsencrypt.org/certs/isrgrootx1.pem
+#   - x3 expired : Copied from old container
+COPY isrgrootx1.pem /etc/pki/ca-trust/source/anchors/
+COPY dst-x3-expired.pem /etc/pki/ca-trust/source/blacklist/
+RUN update-ca-trust && update-ca-trust force-enable
+
+COPY CentOS-Base.repo /etc/yum.repos.d/
+
 RUN set -eux; \
+    echo 'ip_resolve = IPv4' >>/etc/yum.conf; \
     yum update -y; \
     yum install -y \
         centos-release-scl \
@@ -19,7 +30,12 @@ RUN set -eux; \
         unzip \
         vim \
         xz \
-        zlib-devel; \
+        zlib-devel;
+
+COPY CentOS-SCLo-scl.repo /etc/yum.repos.d/
+COPY CentOS-SCLo-scl-rh.repo /etc/yum.repos.d/
+
+RUN set -eux; \
     yum install -y devtoolset-7; \
     yum clean all;
 
@@ -27,6 +43,10 @@ ENV SRC_DIR=/usr/local/src
 
 COPY download-src.sh /root/
 RUN set -eux; \
+# version 1.0.2 of openssl (default version is 1.0.1) required for letsencrypt certificates to continue working
+    /root/download-src.sh openssl https://www.openssl.org/source/old/1.0.2/openssl-1.0.2u.tar.gz; \
+    cd "${SRC_DIR}/openssl"; \
+    CFLAGS=-fPIC ./config shared --prefix=/usr --openssldir=/etc/pki/tls && make && make install; \
 # Latest version of m4 required
     /root/download-src.sh m4 https://ftp.gnu.org/gnu/m4/m4-1.4.18.tar.gz; \
     cd "${SRC_DIR}/m4"; \
@@ -43,6 +63,10 @@ RUN set -eux; \
 # Required: libcurl >= 7.29.0 (default version is 7.19.7)
     /root/download-src.sh libcurl https://curl.haxx.se/download/curl-7.72.0.tar.gz; \
     cd "${SRC_DIR}/libcurl"; \
+    ./configure && make && make install; \
+# Required: libffi >= 3.0.11 (default version is 3.0.5)
+    /root/download-src.sh libffi https://github.com/libffi/libffi/releases/download/v3.4.2/libffi-3.4.2.tar.gz; \
+    cd "${SRC_DIR}/libffi"; \
     ./configure && make && make install; \
 # Required: oniguruma (not installed by deafult)
     /root/download-src.sh oniguruma https://github.com/kkos/oniguruma/releases/download/v6.9.5_rev1/onig-6.9.5-rev1.tar.gz; \
@@ -69,6 +93,8 @@ RUN source scl_source enable devtoolset-7; \
     cd "${SRC_DIR}/libzip"; \
     mkdir build && cd build; \
     cmake .. && make && make install;
+
+RUN echo '#define SECBIT_NO_SETUID_FIXUP (1 << 2)' > '/usr/include/linux/securebits.h'
 
 ENV PKG_CONFIG_PATH="${PKG_CONFIG_PATH}:/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig"
 

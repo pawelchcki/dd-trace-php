@@ -2,23 +2,39 @@
 
 namespace DDTrace\Tests\Common;
 
-use DDTrace\Encoders\Json;
+use DDTrace\Encoders\MessagePack;
 use DDTrace\Encoders\SpanEncoder;
+use DDTrace\GlobalTracer;
 use DDTrace\Span;
 use DDTrace\SpanContext;
+use DDTrace\SpanData;
 use DDTrace\Tests\DebugTransport;
-use DDTrace\Tracer;
-use DDTrace\Transport\Http;
-use DDTrace\GlobalTracer;
 use DDTrace\Tests\Frameworks\Util\Request\GetSpec;
 use DDTrace\Tests\Frameworks\Util\Request\RequestSpec;
 use DDTrace\Tests\WebServer;
+use DDTrace\Tracer;
+use DDTrace\Transport\Http;
 use Exception;
 use PHPUnit\Framework\TestCase;
+
+class FakeSpan extends Span
+{
+    public $startTime;
+    public $duration;
+}
 
 trait TracerTestTrait
 {
     protected static $agentRequestDumperUrl = 'http://request-replayer';
+
+    public function resetTracer($tracer = null, $config = [])
+    {
+        // Reset the current C-level array of generated spans
+        dd_trace_serialize_closed_spans();
+        $transport = new DebugTransport();
+        $tracer = $tracer ?: new Tracer($transport, null, $config);
+        GlobalTracer::set($tracer);
+    }
 
     /**
      * @param $fn
@@ -27,15 +43,15 @@ trait TracerTestTrait
      */
     public function isolateTracer($fn, $tracer = null, $config = [])
     {
-        // Reset the current C-level array of generated spans
-        dd_trace_serialize_closed_spans();
-        $transport = new DebugTransport();
-        $tracer = $tracer ?: new Tracer($transport, null, $config);
-        GlobalTracer::set($tracer);
+        $this->resetTracer($tracer, $config);
 
+        $tracer = GlobalTracer::get();
+        if (\dd_trace_env_config('DD_TRACE_GENERATE_ROOT_SPAN')) {
+            $tracer->startRootSpan("root span");
+        }
         $fn($tracer);
 
-        return $this->flushAndGetTraces($transport);
+        return $this->flushAndGetTraces();
     }
 
     /**
@@ -55,9 +71,8 @@ trait TracerTestTrait
         $fn($tracer);
         $scope->close();
 
-        return $this->flushAndGetTraces($transport);
+        return $this->flushAndGetTraces();
     }
-
 
     /**
      * @param $fn
@@ -68,7 +83,8 @@ trait TracerTestTrait
     {
         // Reset the current C-level array of generated spans
         dd_trace_serialize_closed_spans();
-        putenv('DD_TRACE_SPANS_LIMIT=0');
+        self::putenv('DD_TRACE_SPANS_LIMIT=0');
+        self::putenv('DD_TRACE_GENERATE_ROOT_SPAN=0');
         dd_trace_internal_fn('ddtrace_reload_config');
 
         $transport = new DebugTransport();
@@ -77,9 +93,10 @@ trait TracerTestTrait
 
         $fn($tracer);
 
-        $traces =  $this->flushAndGetTraces($transport);
+        $traces = $this->flushAndGetTraces();
 
-        putenv('DD_TRACE_SPANS_LIMIT');
+        self::putenv('DD_TRACE_SPANS_LIMIT');
+        self::putenv('DD_TRACE_GENERATE_ROOT_SPAN');
         dd_trace_internal_fn('ddtrace_reload_config');
 
         return $traces;
@@ -102,7 +119,7 @@ trait TracerTestTrait
         // Reset the current C-level array of generated spans
         dd_trace_serialize_closed_spans();
 
-        $transport = new Http(new Json(), ['endpoint' => self::$agentRequestDumperUrl]);
+        $transport = new Http(new MessagePack(), ['endpoint' => self::$agentRequestDumperUrl]);
 
         /* Disable Expect: 100-Continue that automatically gets added by curl,
          * as it adds a 1s delay, causing tests to sometimes fail.
@@ -127,15 +144,16 @@ trait TracerTestTrait
      */
     public function inWebServer($fn, $rootPath, $envs = [], $inis = [], &$curlInfo = null)
     {
-        $this->resetRequestDumper();
+        $this->resetTracer();
         $webServer = new WebServer($rootPath, '0.0.0.0', 6666);
         $webServer->mergeEnvs($envs);
         $webServer->mergeInis($inis);
         $webServer->start();
+        $this->resetRequestDumper();
 
         $fn(function (RequestSpec $request) use ($webServer, &$curlInfo) {
             if ($request instanceof GetSpec) {
-                $curl =  curl_init('http://127.0.0.1:6666' . $request->getPath());
+                $curl = curl_init('http://127.0.0.1:6666' . $request->getPath());
                 curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
                 curl_setopt($curl, CURLOPT_HTTPHEADER, $request->getHeaders());
                 $response = curl_exec($curl);
@@ -157,11 +175,22 @@ trait TracerTestTrait
     /**
      * This method executes a single script with the provided configuration.
      */
-    public function inCli($scriptPath, $customEnvs = [], $customInis = [], $arguments = '')
+    public function inCli($scriptPath, $customEnvs = [], $customInis = [], $arguments = '', $withOutput = false)
     {
         $this->resetRequestDumper();
+        $output = $this->executeCli($scriptPath, $customEnvs, $customInis, $arguments, $withOutput);
+        $out = [$this->parseTracesFromDumpedData()];
+        if ($withOutput) {
+            $out[] = $output;
+        }
+        return $out;
+    }
+
+    public function executeCli($scriptPath, $customEnvs = [], $customInis = [], $arguments = '', $withOutput = false)
+    {
         $envs = (string) new EnvSerializer(array_merge(
             [
+                'DD_AUTOLOAD_NO_COMPILE' => getenv('DD_AUTOLOAD_NO_COMPILE'),
                 'DD_TRACE_CLI_ENABLED' => 'true',
                 'DD_AGENT_HOST' => 'request-replayer',
                 'DD_TRACE_AGENT_PORT' => '80',
@@ -180,17 +209,19 @@ trait TracerTestTrait
         $script = escapeshellarg($scriptPath);
         $arguments = escapeshellarg($arguments);
         $commandToExecute = "$envs php $inis $script $arguments";
-        `$commandToExecute`;
-
-        return $this->parseTracesFromDumpedData();
+        if ($withOutput) {
+            return (string) `$commandToExecute 2>&1`;
+        } else {
+            `$commandToExecute`;
+        }
     }
 
     /**
      * Reset the request dumper removing all the dumped  data file.
      */
-    private function resetRequestDumper()
+    public function resetRequestDumper()
     {
-        $curl =  curl_init(self::$agentRequestDumperUrl . '/clear-dumped-data');
+        $curl = curl_init(self::$agentRequestDumperUrl . '/clear-dumped-data');
         curl_exec($curl);
     }
 
@@ -205,6 +236,11 @@ trait TracerTestTrait
      */
     public function tracesFromWebRequest($fn, $tracer = null)
     {
+        if ($tracer === null) {
+            // Avoid phpunits default spans from being acknowledged for distributed tracing
+            $this->resetTracer();
+        }
+
         // Clearing existing dumped file
         $this->resetRequestDumper();
 
@@ -212,6 +248,51 @@ trait TracerTestTrait
         $fn($tracer);
 
         return $this->parseTracesFromDumpedData();
+    }
+
+    private function parseRawDumpedTraces($rawTraces)
+    {
+        $traces = [];
+
+        foreach ($rawTraces as $spansInTrace) {
+            $spans = [];
+            foreach ($spansInTrace as $rawSpan) {
+                $spanContext = new SpanContext(
+                    (string) $rawSpan['trace_id'],
+                    (string) $rawSpan['span_id'],
+                    isset($rawSpan['parent_id']) ? (string) $rawSpan['parent_id'] : null
+                );
+
+                if (empty($rawSpan['resource'])) {
+                    TestCase::fail(sprintf("Span '%s' has empty resource name", $rawSpan['name']));
+                    return;
+                }
+
+                $rawSpan["duration"] = (int)($rawSpan["duration"] / 1000);
+                $rawSpan["start"] = (int)($rawSpan["start"] / 1000);
+
+                $internalSpan = new SpanData();
+                $internalSpan->name = $rawSpan["name"];
+                $internalSpan->service = isset($rawSpan['service']) ? $rawSpan['service'] : null;
+                $internalSpan->resource = $rawSpan['resource'];
+                if (isset($rawSpan['type'])) {
+                    $internalSpan->type = $rawSpan['type'];
+                }
+                $internalSpan->meta = isset($rawSpan['meta']) ? $rawSpan['meta'] : [];
+                $internalSpan->metrics = isset($rawSpan['metrics']) ? $rawSpan['metrics'] : [];
+                $span = new FakeSpan($internalSpan, $spanContext);
+                $span->duration = $rawSpan["duration"];
+                $span->startTime = $rawSpan["start"];
+                $this->setRawPropertyFromArray($span, $rawSpan, 'hasError', 'error', function ($value) {
+                    return $value == 1 || $value == true;
+                });
+
+                $spans[] = SpanEncoder::encode($span);
+            }
+            $traces[] = $spans;
+        }
+
+        return $traces;
     }
 
     /**
@@ -222,11 +303,64 @@ trait TracerTestTrait
      */
     private function parseTracesFromDumpedData()
     {
+        $response = $this->retrieveDumpedData();
+
+        if (!$response) {
+            return [];
+        }
+
+        // For now we only support asserting traces against one dump at a time.
+        $loaded = json_decode($response, true);
+
+        // Data is returned as [{trace_1}, {trace_2}]. As of today we only support parsing 1 trace.
+        if (count($loaded) > 1) {
+            TestCase::fail(
+                sprintf("Received multiple bodys from request replayer: %s", \var_export($loaded, true))
+            );
+        }
+
+        $uniqueRequest = $loaded[0];
+
+        if (!isset($uniqueRequest['body'])) {
+            return [];
+        }
+
+        $rawTraces = json_decode($uniqueRequest['body'], true);
+        return $this->parseRawDumpedTraces($rawTraces);
+    }
+
+    public function parseMultipleRequestsFromDumpedData()
+    {
+        $response = $this->retrieveDumpedData();
+        if (!$response) {
+            return [];
+        }
+
+        // For now we only support asserting traces against one dump at a time.
+        $manyRequests = json_decode($response, true);
+        $tracesAllRequests = [];
+
+        // We receive back an array of traces
+        foreach ($manyRequests as $uniqueRequest) {
+            // error_log('Request: ' . print_r($uniqueRequest, 1));
+            $rawTraces = json_decode($uniqueRequest['body'], true);
+            $tracesAllRequests[] = $this->parseRawDumpedTraces($rawTraces);
+        }
+
+        return $tracesAllRequests;
+    }
+
+    /**
+     * Returns the raw response body, if any, or null otherwise.
+     */
+    private function retrieveDumpedData()
+    {
+        $response = null;
         // When tests run with the background sender enabled, there might be some delay between when a trace is flushed
         // and actually sent. While we should find a smart way to tackle this, for now we do it quick and dirty, in a
         // for loop.
         for ($attemptNumber = 1; $attemptNumber <= 20; $attemptNumber++) {
-            $curl =  curl_init(self::$agentRequestDumperUrl . '/replay');
+            $curl = curl_init(self::$agentRequestDumperUrl . '/replay');
             curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
             // Retrieving data
             $response = curl_exec($curl);
@@ -243,62 +377,7 @@ trait TracerTestTrait
                 break;
             }
         }
-
-        if (!$response) {
-            return [];
-        }
-
-        // For now we only support asserting traces against one dump at a time.
-        $loaded = json_decode($response, true);
-
-        if (!isset($loaded['body'])) {
-            return [];
-        }
-
-        $rawTraces = json_decode($loaded['body'], true);
-        $traces = [];
-
-        foreach ($rawTraces as $spansInTrace) {
-            $spans = [];
-            foreach ($spansInTrace as $rawSpan) {
-                $spanContext = new SpanContext(
-                    $rawSpan['trace_id'],
-                    $rawSpan['span_id'],
-                    isset($rawSpan['parent_id']) ? $rawSpan['parent_id'] : null
-                );
-
-                if (empty($rawSpan['resource'])) {
-                    TestCase::fail(sprintf("Span '%s' has empty resource name", $rawSpan['name']));
-                    return;
-                }
-
-                $span = new Span(
-                    $rawSpan['name'],
-                    $spanContext,
-                    isset($rawSpan['service']) ? $rawSpan['service'] : null,
-                    $rawSpan['resource'],
-                    $rawSpan['start']
-                );
-
-                // We want to use reflection to set properties so that we do not fire
-                // potentials changes in setters.
-                $this->setRawPropertyFromArray($span, $rawSpan, 'operationName', 'name');
-                $this->setRawPropertyFromArray($span, $rawSpan, 'service');
-                $this->setRawPropertyFromArray($span, $rawSpan, 'resource');
-                $this->setRawPropertyFromArray($span, $rawSpan, 'startTime', 'start');
-                $this->setRawPropertyFromArray($span, $rawSpan, 'hasError', 'error', function ($value) {
-                    return $value == 1 || $value == true;
-                });
-                $this->setRawPropertyFromArray($span, $rawSpan, 'type');
-                $this->setRawPropertyFromArray($span, $rawSpan, 'duration');
-                $this->setRawPropertyFromArray($span, $rawSpan, 'tags', 'meta');
-                $this->setRawPropertyFromArray($span, $rawSpan, 'metrics', 'metrics');
-
-                $spans[] = SpanEncoder::encode($span);
-            }
-            $traces[] = $spans;
-        }
-        return $traces;
+        return $response;
     }
 
     /**
@@ -337,13 +416,6 @@ trait TracerTestTrait
     public function simulateWebRequestTracer($fn)
     {
         $tracer = GlobalTracer::get();
-        $transport = new DebugTransport();
-
-        // Replacing the transport in the current tracer
-        $tracerReflection = new \ReflectionObject($tracer);
-        $tracerTransport = $tracerReflection->getProperty('transport');
-        $tracerTransport->setAccessible(true);
-        $tracerTransport->setValue($tracer, $transport);
 
         $fn($tracer);
 
@@ -353,20 +425,16 @@ trait TracerTestTrait
         // and that do not magically disappear. Here we are faking things.
         $tracer->getActiveSpan()->finish();
 
-        return $this->flushAndGetTraces($transport);
+        return $this->flushAndGetTraces();
     }
 
     /**
-     * @param DebugTransport $transport
      * @return array[]
      */
-    protected function flushAndGetTraces($transport)
+    protected function flushAndGetTraces()
     {
-        /** @var Tracer $tracer */
-        $tracer = GlobalTracer::get();
-        /** @var DebugTransport $transport */
-        $tracer->flush();
-        return $transport->getTraces();
+        $traces = \dd_trace_serialize_closed_spans();
+        return $traces ? [$traces] : [];
     }
 
     /**

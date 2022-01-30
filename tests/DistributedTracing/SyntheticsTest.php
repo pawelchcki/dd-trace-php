@@ -53,13 +53,13 @@ class SyntheticsTest extends WebFrameworkTestCase
                 'GET /index.php'
             )->withExactTags([
                 'http.method' => 'GET',
-                'http.url' => '/index.php',
+                'http.url' => 'http://localhost:9999/index.php',
                 'http.status_code' => '200',
                 '_dd.origin' => 'synthetics-browser',
             ])->withExactMetrics([
                 '_sampling_priority_v1' => 1,
             ])
         );
-        $this->assertSame(123456, $traces[0][0]['trace_id']);
+        $this->assertSame('123456', $traces[0][0]['trace_id']);
     }
 }

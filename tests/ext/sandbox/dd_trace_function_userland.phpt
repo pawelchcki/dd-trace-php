@@ -38,11 +38,13 @@ array (
 ---
 array(1) {
   [0]=>
-  array(7) {
+  array(9) {
     ["trace_id"]=>
-    int(%d)
+    string(%d) "%d"
     ["span_id"]=>
-    int(%d)
+    string(%d) "%d"
+    ["parent_id"]=>
+    string(%d) "%d"
     ["start"]=>
     int(%d)
     ["duration"]=>
@@ -51,11 +53,10 @@ array(1) {
     string(15) "filter_to_array"
     ["resource"]=>
     string(15) "filter_to_array"
-    ["meta"]=>
-    array(1) {
-      ["system.pid"]=>
-      string(%d) "%d"
-    }
+    ["service"]=>
+    string(30) "dd_trace_function_userland.php"
+    ["type"]=>
+    string(3) "cli"
   }
 }
 array(0) {

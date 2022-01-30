@@ -18,9 +18,9 @@ jobs:
       -
         name: Build
         uses: docker/bake-action@v1
-        with:
-          files: |
-            ./docker-bake.hcl            
+        # with:
+        #   files: |
+        #     ./docker-bake.hcl            
           targets: packages
       - 
         name: Upload artifacts

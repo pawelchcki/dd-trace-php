@@ -7,7 +7,7 @@ jobs:
     steps:
       - checkout # check out the code in the project directory
       - run: echo "hello world" # run the `echo` command
-      - run: docker buildx bake package
+      - run: DOCKER_CLI_EXPERIMENTAL=enabled docker buildx bake package
       - store_artifacts:
           path: build/package
           destination: dd-trace-php

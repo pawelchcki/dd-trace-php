@@ -10,7 +10,7 @@ jobs:
       - checkout # check out the code in the project directory
       - run: docker system info
       - run: docker buildx create --config .circleci/buildkitd.toml --use --name=circleci
-      - restore-cache:
+      - restore_cache:
           keys: 
             - bake-cache-
       - run: docker buildx bake package-circleci --progress=plain

@@ -4,10 +4,12 @@ jobs:
     resource_class: large
     machine:
       image: ubuntu-2004:202010-01
+    environment: 
+      DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
       - checkout # check out the code in the project directory
-      - run: echo "hello world" # run the `echo` command
-      - run: DOCKER_CLI_EXPERIMENTAL=enabled docker buildx bake package
+      - run: docker buildx create --config .circleci/buildkitd.toml --bootstrap --use --name=circleci
+      - run: docker buildx bake package
       - store_artifacts:
           path: build/package
           destination: dd-trace-php

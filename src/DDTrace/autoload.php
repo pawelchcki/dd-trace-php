@@ -15,3 +15,5 @@ spl_autoload_register(function ($class) {
         $loader($file);
     }
 });
+
+# inconsequential change to test caching on non C level change

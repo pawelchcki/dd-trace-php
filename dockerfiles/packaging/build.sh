@@ -6,6 +6,5 @@ CFLAGS=${CFLAGS:="-std=gnu11 -O2 -g -Wall -Wextra"}
 mkdir -p extensions
 switch-php $PHP_VERSION 
 make all ECHO_ARG="-e" CFLAGS="${CFLAGS}" BUILD_DIR="."
-find -name "ddtrace.so"
 
 cp .libs/ddtrace.so extensions/ddtrace-${SO_SUFFIX}.so

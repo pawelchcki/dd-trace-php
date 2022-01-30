@@ -15,4 +15,5 @@ target "extensions" {
 target "build-5-4" {
     inherits = ["package"]
     target = "php-5.4-debug"
+    output = []
 }

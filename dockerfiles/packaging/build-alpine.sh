@@ -8,14 +8,6 @@ CFLAGS=${CFLAGS:="-std=gnu11 -O2 -g -Wall -Wextra -Werror"}
 
 echo "Building alpine PHP ${PHP_VERSION}/${SO_SUFFIX}"
 
-apk add --no-cache \
-    autoconf \
-    bash \
-    g++ \
-    gcc \
-    libexecinfo-dev \
-    make \
-
 mkdir -p extensions
 make all ECHO_ARG="-e" CFLAGS="${CFLAGS}" BUILD_DIR="."
 

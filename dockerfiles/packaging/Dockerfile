@@ -3,13 +3,24 @@
 ### syntax=docker/dockerfile-upstream:master
 ARG DOCKER_REGISTRY=docker.io
 
-FROM scratch as src
+FROM scratch as full_src
 COPY / /
 
-# ARG SAVE_BUILD_OUTPUT=php-5.4
-# FROM ${SAVE_BUILD_OUTPUT} as build_output
-# COPY 
-
+FROM scratch as src
+COPY dockerfiles/packaging/build.sh dockerfiles/packaging/build.sh
+COPY dockerfiles/packaging/build-alpine.sh dockerfiles/packaging/build-alpine.sh
+COPY dockerfiles/packaging/prepare-alpine.sh dockerfiles/packaging/prepare-alpine.sh
+COPY Makefile .
+COPY ext ext
+COPY src/DDTrace/Tracer.php src/DDTrace/Tracer.php
+COPY src/dogstatsd src/dogstatsd
+COPY components components
+COPY zend_abstract_interface zend_abstract_interface
+COPY m4 m4
+COPY tests/ext tests/ext
+COPY tests/C2PHP tests/C2PHP
+COPY ddtrace.sym ddtrace.sym
+COPY config.m4 config.m4
 
 ### PHP 5.4
 
@@ -32,6 +43,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-5.4-base-alpine as php-5.4-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 5.4 20100412
 
 ### PHP 5.5
@@ -55,6 +67,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-5.5-base-alpine as php-5.5-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 5.5 20121113
 
 ### PHP 5.6
@@ -78,6 +91,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-5.6-base-alpine as php-5.6-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 5.6 20131106
 
 FROM scratch as php-5.x-output
@@ -115,6 +129,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-7.0-base-alpine as php-7.0-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 7.0 20151012
 
 FROM scratch AS php-7.0-output
@@ -144,6 +159,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-7.1-base-alpine as php-7.1-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 7.1 20160303
 
 FROM scratch as php-7.1-output
@@ -173,6 +189,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-7.2-base-alpine as php-7.2-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 7.2 20170718
 
 FROM scratch as php-7.2-output
@@ -202,6 +219,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-7.3-base-alpine as php-7.3-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 7.3 20180731
 
 FROM scratch as php-7.3-output
@@ -231,6 +249,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-7.4-base-alpine as php-7.4-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 7.4 20190902
 
 FROM scratch as php-7.4-output
@@ -260,6 +279,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-8.0-base-alpine as php-8.0-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 8.0 20200930
 
 FROM scratch as php-8.0-output
@@ -288,6 +308,7 @@ COPY --from=src / /build/
 WORKDIR /build/
 
 FROM php-8.1-base-alpine as php-8.1-alpine
+RUN sh dockerfiles/packaging/prepare-alpine.sh
 RUN sh dockerfiles/packaging/build-alpine.sh 8.0 20210902
 
 FROM scratch as php-8.1-output
@@ -295,14 +316,6 @@ COPY --from=php-8.1 /build/extensions/*.so /
 COPY --from=php-8.1-zts /build/extensions/*.so /
 COPY --from=php-8.1-debug /build/extensions/*.so /
 COPY --from=php-8.1-alpine /build/extensions/*.so /
-
-#       - compile_extension_centos:
-        #   requires: [ 'Prepare Code' ]
-        #   name: "Compile PHP 81 nts + zts + debug"
-        #   docker_image: "datadog/dd-trace-ci:php-8.1_centos-6"
-        #   php_version: "8.1"
-        #   so_suffix: "20210902"
-
 
 # copy all built extensions into a single tmp image
 FROM scratch as extensions
@@ -318,7 +331,7 @@ COPY --from=php-8.1-output /*.so /
 
 FROM ${DOCKER_REGISTRY}/datadog/docker-library:ddtrace_php_fpm_packaging as packager
 WORKDIR /build/
-COPY --from=src / /build/
+COPY --from=full_src / /build/
 COPY --from=extensions / /build/extensions/
 RUN make packages
 

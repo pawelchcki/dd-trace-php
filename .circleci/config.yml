@@ -4,20 +4,14 @@ jobs:
     resource_class: large
     machine:
       image: ubuntu-2004:202010-01
+      docker_layer_caching: true
     environment: 
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
       - checkout # check out the code in the project directory
       - run: docker system info
       - run: docker buildx create --config .circleci/buildkitd.toml --use --name=circleci
-      - restore_cache:
-          keys: 
-            - bake-cache-
-      - run: docker buildx bake package-circleci --progress=plain
-      - save_cache:
-          key: bake-cache-v1
-          paths:
-            - build/cache
+      - run: docker buildx bake package --progress=plain
       - store_artifacts:
           path: build/package
           destination: dd-trace-php

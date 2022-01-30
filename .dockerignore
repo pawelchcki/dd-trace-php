@@ -7,4 +7,4 @@ tmp/
 !/ext/vendor/**
 *.tar
 docker-bake.hcl
-/build/
+/build

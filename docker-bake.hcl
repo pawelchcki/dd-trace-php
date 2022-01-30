@@ -6,6 +6,15 @@ target "package" {
     output = ["build/package"]
 }
 
+target "package-circleci" {
+    dockerfile = "dockerfiles/packaging/Dockerfile"
+    target = "export"
+    cache-from = ["type=local,src=build/cache"]
+    cache-to = ["type=local,dest=build/cache"]
+    output = ["build/package"]
+}
+
+
 target "extensions" {
     inherits = ["package"]
     output = ["build/exts/"]

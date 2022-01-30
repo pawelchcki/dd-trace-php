@@ -10,7 +10,7 @@ jobs:
       - checkout # check out the code in the project directory
       - run: docker buildx create --help
       - run: docker buildx create --config .circleci/buildkitd.toml --use --name=circleci
-      - run: docker buildx bake package
+      - run: docker buildx bake package --progress=plain
       - store_artifacts:
           path: build/package
           destination: dd-trace-php

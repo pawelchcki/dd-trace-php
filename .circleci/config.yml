@@ -8,7 +8,7 @@ jobs:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
       - checkout # check out the code in the project directory
-      - run: docker buildx create --help
+      - run: docker system info
       - run: docker buildx create --config .circleci/buildkitd.toml --use --name=circleci
       - run: docker buildx bake package --progress=plain
       - store_artifacts:

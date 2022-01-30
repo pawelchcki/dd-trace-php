@@ -1,7 +1,7 @@
 version: 2.1
 jobs:
   build:
-    resource_class: resource_class
+    resource_class: large
     machine:
       image: ubuntu-2004:202010-01
     steps:

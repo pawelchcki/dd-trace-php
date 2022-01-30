@@ -19,4 +19,4 @@ apk add --no-cache \
 mkdir -p extensions
 make all ECHO_ARG="-e" CFLAGS="${CFLAGS}" BUILD_DIR="."
 
-cp tmp/build_extension/.libs/ddtrace.so extensions/ddtrace-${SO_SUFFIX}-alpine.so
+cp .libs/ddtrace.so extensions/ddtrace-${SO_SUFFIX}-alpine.so

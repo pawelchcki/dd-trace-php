@@ -14,6 +14,14 @@ target "package-circleci" {
     output = ["build/package"]
 }
 
+target "package-github" {
+    dockerfile = "dockerfiles/packaging/Dockerfile"
+    target = "export"
+    cache-from = ["type=registry,ref=ghcr.io/pawelchcki/dd-trace-php"]
+    cache-to = ["type=registry,ref=ghcr.io/pawelchcki/dd-trace-php"]
+    output = ["build/package"]
+}
+
 
 target "extensions" {
     inherits = ["package"]

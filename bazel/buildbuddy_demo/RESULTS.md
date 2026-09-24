@@ -14,6 +14,7 @@ time to build the complete PHP release matrix.
 | Warm runner, next push | 0.268s | 0.146s | 5.591s | [Invocation](https://pawel.buildbuddy.io/invocation/16cc52a3-4536-401c-8fd4-2dc72ad5d899) |
 | RBE probe, next push | 0.192s | 0.093s | 4.655s | [Invocation](https://pawel.buildbuddy.io/invocation/8bb28415-f264-4ca9-9206-dfd899e3471a) |
 | PHP 8.5 release tracer, forced first build | 925.861s | 3.291s | 963.845s | [Invocation](https://pawel.buildbuddy.io/invocation/90cf47af-e676-4f36-96a5-fb8fcd7bb0d1) |
+| PHP 8.5 release tracer, remote cache warm but runner cold | 296.952s | 2.806s | 332.263s | [Invocation](https://pawel.buildbuddy.io/invocation/a73c88a4-aa87-4146-a119-eaca96211a64) |
 
 The forced RBE probe disables action cache reads in its first step and specifies
 the custom executor pool. A direct client run of the same target reported one
@@ -28,3 +29,9 @@ The PHP release variant analyzed 492 packages and 58,169 configured targets,
 then executed 1,089 remote processes in its first build. The immediate replay
 loaded zero packages and configured zero targets. The first build intentionally
 bypassed action cache reads; later runs allow cache reads.
+
+The next workflow started from a fresh checkout and reported 1,089 remote
+cache hits, but still spent 296.952s in its first Bazel step. That separates
+remote action caching from keeping the Bazel client and repository downloads
+warm across workflow invocations. The workflow now requests a branch snapshot
+using `first-non-default-ref` for the representative release action.

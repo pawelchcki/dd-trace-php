@@ -50,6 +50,8 @@ actions:
       cpu: 4
       memory: "12GB"
       disk: "40GB"
+    platform_properties:
+      remote-snapshot-save-policy: first-non-default-ref
     timeout: "2h"
     steps:
       - run: >-

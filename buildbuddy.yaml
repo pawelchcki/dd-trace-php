@@ -1,5 +1,5 @@
 actions:
-  - name: "Bazel remote action and hot replay"
+  - name: "Bazel warm runner and cache replay"
     triggers:
       push:
         branches:
@@ -7,15 +7,12 @@ actions:
     container_image: "ubuntu-22.04"
     steps:
       - run: >-
-          bazel build //bazel/buildbuddy_demo:hello
+          bazel build //bazel/stages:bootstrap_manifest //bazel/buildbuddy_demo:hello
           --remote_executor=grpcs://remote.buildbuddy.io
           --remote_cache=grpcs://remote.buildbuddy.io
-          --spawn_strategy=remote
-          --remote_local_fallback=false
-          --remote_accept_cached=false
+          --spawn_strategy=local
       - run: >-
-          bazel build //bazel/buildbuddy_demo:hello
+          bazel build //bazel/stages:bootstrap_manifest //bazel/buildbuddy_demo:hello
           --remote_executor=grpcs://remote.buildbuddy.io
           --remote_cache=grpcs://remote.buildbuddy.io
-          --spawn_strategy=remote
-          --remote_local_fallback=false
+          --spawn_strategy=local

@@ -1,9 +1,10 @@
 # BuildBuddy demo
 
 This small Bazel target exercises BuildBuddy without fetching the PHP release
-toolchains. The root `buildbuddy.yaml` runs it twice on a BuildBuddy workflow
-runner: the first build bypasses the remote action cache to verify execution,
-and the second reuses the same Bazel server for a hot replay.
+toolchains. The root `buildbuddy.yaml` also builds the real bootstrap manifest
+twice on a BuildBuddy workflow runner. The second command reuses the same Bazel
+server for a hot replay. Both commands use the remote action cache and run
+cache misses on the workflow runner.
 
 After `bb login`, a local client can test the action cache with:
 

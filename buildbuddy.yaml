@@ -40,3 +40,42 @@ actions:
           --remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
           --spawn_strategy=remote
           --remote_local_fallback=false
+  - name: "PHP 8.5 release tracer RBE"
+    triggers:
+      push:
+        branches:
+          - "bazel-buildbuddy-demo"
+    container_image: "ubuntu-22.04"
+    resource_requests:
+      cpu: 4
+      memory: "12GB"
+      disk: "40GB"
+    timeout: "2h"
+    steps:
+      - run: >-
+          bazel build
+          //bazel/products/tracer:ddtrace_fat_amd64_glibc_release_php85
+          //bazel/products/tracer:ddtrace_fat_amd64_glibc_release_php85_check
+          --config=remote-hermetic-amd64
+          --remote_executor=grpcs://remote.buildbuddy.io
+          --remote_cache=grpcs://remote.buildbuddy.io
+          --remote_instance_name=
+          --remote_exec_header=x-buildbuddy-platform.Pool=linux-amd64-kvm
+          --remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
+          --remote_local_fallback=false
+          --remote_accept_cached=false
+          --remote_download_outputs=toplevel
+          --jobs=8
+      - run: >-
+          bazel build
+          //bazel/products/tracer:ddtrace_fat_amd64_glibc_release_php85
+          //bazel/products/tracer:ddtrace_fat_amd64_glibc_release_php85_check
+          --config=remote-hermetic-amd64
+          --remote_executor=grpcs://remote.buildbuddy.io
+          --remote_cache=grpcs://remote.buildbuddy.io
+          --remote_instance_name=
+          --remote_exec_header=x-buildbuddy-platform.Pool=linux-amd64-kvm
+          --remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
+          --remote_local_fallback=false
+          --remote_download_outputs=toplevel
+          --jobs=8

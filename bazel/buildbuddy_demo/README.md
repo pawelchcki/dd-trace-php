@@ -10,6 +10,10 @@ A second workflow action forces this target onto the `linux-amd64-kvm` RBE
 executor pool, then measures a hot replay. Its first step bypasses the action
 cache so a passing workflow verifies that an executor really ran the action.
 
+A third action builds and checks one actual PHP 8.5 glibc release tracer on the
+same RBE pool. This is a representative release product; the complete release
+matrix contains many more variants.
+
 After `bb login`, a local client can test the action cache with:
 
 ```sh

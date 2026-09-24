@@ -24,6 +24,9 @@ BuildBuddy, use `--spawn_strategy=remote --remote_local_fallback=false` instead
 of `--spawn_strategy=local`. This requires an available Linux amd64 executor in
 the BuildBuddy organization. The workflow also requires a workflows runner and
 the fork to be linked in BuildBuddy Workflows.
+Run `bb clean` first and add `--remote_accept_cached=false` when checking that
+an action actually reached an executor; an up-to-date or cached target does not
+prove that remote execution is available.
 
 The target is only a connectivity and warm state probe. It does not represent
 the cost of the PHP release build.

@@ -1,5 +1,5 @@
 actions:
-  - name: "Bazel amd64 remote probe and hot replay"
+  - name: "Bazel remote action and hot replay"
     triggers:
       push:
         branches:
@@ -7,14 +7,14 @@ actions:
     container_image: "ubuntu-22.04"
     steps:
       - run: >-
-          bazel build --config=remote-arch-amd64
+          bazel build //bazel/buildbuddy_demo:hello
           --remote_executor=grpcs://remote.buildbuddy.io
           --remote_cache=grpcs://remote.buildbuddy.io
-          --remote_instance_name=
-          //bazel/stages:remote_arch_amd64
+          --spawn_strategy=remote
+          --remote_local_fallback=false
       - run: >-
-          bazel build --config=remote-arch-amd64
+          bazel build //bazel/buildbuddy_demo:hello
           --remote_executor=grpcs://remote.buildbuddy.io
           --remote_cache=grpcs://remote.buildbuddy.io
-          --remote_instance_name=
-          //bazel/stages:remote_arch_amd64
+          --spawn_strategy=remote
+          --remote_local_fallback=false

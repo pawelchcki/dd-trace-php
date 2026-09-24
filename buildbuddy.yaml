@@ -63,7 +63,6 @@ actions:
           --remote_exec_header=x-buildbuddy-platform.Pool=linux-amd64-kvm
           --remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
           --remote_local_fallback=false
-          --remote_accept_cached=false
           --remote_download_outputs=toplevel
           --jobs=8
       - run: >-

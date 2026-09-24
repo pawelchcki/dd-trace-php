@@ -14,6 +14,8 @@ A third action builds and checks one actual PHP 8.5 glibc release tracer on the
 same RBE pool. This is a representative release product; the complete release
 matrix contains many more variants.
 
+Measured runs and invocation links are in [RESULTS.md](RESULTS.md).
+
 After `bb login`, a local client can test the action cache with:
 
 ```sh

@@ -2,8 +2,8 @@
 
 This small Bazel target exercises BuildBuddy without fetching the PHP release
 toolchains. The root `buildbuddy.yaml` runs it twice on a BuildBuddy workflow
-runner: the first build executes the action remotely, and the second reuses the
-same Bazel server for a hot replay.
+runner: the first build bypasses the remote action cache to verify execution,
+and the second reuses the same Bazel server for a hot replay.
 
 After `bb login`, a local client can test the action cache with:
 

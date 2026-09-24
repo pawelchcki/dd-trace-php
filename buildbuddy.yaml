@@ -12,6 +12,7 @@ actions:
           --remote_cache=grpcs://remote.buildbuddy.io
           --spawn_strategy=remote
           --remote_local_fallback=false
+          --remote_accept_cached=false
       - run: >-
           bazel build //bazel/buildbuddy_demo:hello
           --remote_executor=grpcs://remote.buildbuddy.io

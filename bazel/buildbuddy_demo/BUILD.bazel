@@ -3,5 +3,5 @@ package(default_visibility = ["//visibility:public"])
 genrule(
     name = "hello",
     outs = ["hello.txt"],
-    cmd = "printf 'dd-trace-php BuildBuddy demo\\n' > $@",
+    cmd = "printf 'dd-trace-php BuildBuddy remote action demo\\n' > $@",
 )

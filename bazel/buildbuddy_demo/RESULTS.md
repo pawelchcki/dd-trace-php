@@ -15,6 +15,8 @@ time to build the complete PHP release matrix.
 | RBE probe, next push | 0.192s | 0.093s | 4.655s | [Invocation](https://pawel.buildbuddy.io/invocation/8bb28415-f264-4ca9-9206-dfd899e3471a) |
 | PHP 8.5 release tracer, forced first build | 925.861s | 3.291s | 963.845s | [Invocation](https://pawel.buildbuddy.io/invocation/90cf47af-e676-4f36-96a5-fb8fcd7bb0d1) |
 | PHP 8.5 release tracer, remote cache warm but runner cold | 296.952s | 2.806s | 332.263s | [Invocation](https://pawel.buildbuddy.io/invocation/a73c88a4-aa87-4146-a119-eaca96211a64) |
+| PHP 8.5 release tracer, explicit branch snapshot policy | 240.013s | 2.366s | 271.295s | [Invocation](https://pawel.buildbuddy.io/invocation/178b1c1a-288b-43b2-9c58-89edd673a666) |
+| PHP 8.5 release tracer, same-commit API rerun | 220.100s | 1.878s | 250.981s | [Invocation](https://pawel.buildbuddy.io/invocation/1e1f667d-0b6f-46e3-9d57-b11e37288ce5) |
 
 The forced RBE probe disables action cache reads in its first step and specifies
 the custom executor pool. A direct client run of the same target reported one
@@ -33,5 +35,9 @@ bypassed action cache reads; later runs allow cache reads.
 The next workflow started from a fresh checkout and reported 1,089 remote
 cache hits, but still spent 296.952s in its first Bazel step. That separates
 remote action caching from keeping the Bazel client and repository downloads
-warm across workflow invocations. The workflow now requests a branch snapshot
-using `first-non-default-ref` for the representative release action.
+warm across workflow invocations. An explicit `first-non-default-ref` branch
+snapshot policy also started cold. BuildBuddy's execution metadata says that
+run saved both local and remote snapshots, but the same-commit rerun still
+started with `git init`, analyzed all 58,169 targets, and took 220.100s for
+the first Bazel step. The workflow now explicitly requests the newest snapshot
+on reads to test whether it can resume from the remote copy.

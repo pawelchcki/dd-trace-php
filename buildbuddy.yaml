@@ -52,6 +52,9 @@ actions:
       disk: "40GB"
     platform_properties:
       remote-snapshot-save-policy: first-non-default-ref
+      snapshot-read-policy: newest
+    env:
+      GIT_REPO_DEFAULT_BRANCH: master
     timeout: "2h"
     steps:
       - run: >-

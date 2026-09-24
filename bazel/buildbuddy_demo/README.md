@@ -12,7 +12,9 @@ cache so a passing workflow verifies that an executor really ran the action.
 
 A third action builds and checks one actual PHP 8.5 glibc release tracer on the
 same RBE pool. This is a representative release product; the complete release
-matrix contains many more variants.
+matrix contains many more variants. It requests a branch VM snapshot and the
+newest available snapshot on later runs, so the runner can attempt to preserve
+the Bazel analysis cache and repository downloads across workflows.
 
 Measured runs and invocation links are in [RESULTS.md](RESULTS.md).
 

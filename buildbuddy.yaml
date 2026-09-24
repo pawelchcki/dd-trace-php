@@ -16,3 +16,27 @@ actions:
           --remote_executor=grpcs://remote.buildbuddy.io
           --remote_cache=grpcs://remote.buildbuddy.io
           --spawn_strategy=local
+  - name: "Bazel RBE action and hot replay"
+    triggers:
+      push:
+        branches:
+          - "bazel-buildbuddy-demo"
+    container_image: "ubuntu-22.04"
+    steps:
+      - run: >-
+          bazel build //bazel/buildbuddy_demo:hello
+          --remote_executor=grpcs://remote.buildbuddy.io
+          --remote_cache=grpcs://remote.buildbuddy.io
+          --remote_exec_header=x-buildbuddy-platform.Pool=linux-amd64-kvm
+          --remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
+          --spawn_strategy=remote
+          --remote_local_fallback=false
+          --remote_accept_cached=false
+      - run: >-
+          bazel build //bazel/buildbuddy_demo:hello
+          --remote_executor=grpcs://remote.buildbuddy.io
+          --remote_cache=grpcs://remote.buildbuddy.io
+          --remote_exec_header=x-buildbuddy-platform.Pool=linux-amd64-kvm
+          --remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
+          --spawn_strategy=remote
+          --remote_local_fallback=false

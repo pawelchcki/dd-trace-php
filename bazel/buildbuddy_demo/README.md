@@ -6,6 +6,10 @@ twice on a BuildBuddy workflow runner. The second command reuses the same Bazel
 server for a hot replay. Both commands use the remote action cache and run
 cache misses on the workflow runner.
 
+A second workflow action forces this target onto the `linux-amd64-kvm` RBE
+executor pool, then measures a hot replay. Its first step bypasses the action
+cache so a passing workflow verifies that an executor really ran the action.
+
 After `bb login`, a local client can test the action cache with:
 
 ```sh
@@ -22,9 +26,15 @@ bb build //bazel/buildbuddy_demo:hello \
 
 The clean rebuild should report a remote cache hit. To execute the action on
 BuildBuddy, use `--spawn_strategy=remote --remote_local_fallback=false` instead
-of `--spawn_strategy=local`. This requires an available Linux amd64 executor in
-the BuildBuddy organization. The workflow also requires a workflows runner and
-the fork to be linked in BuildBuddy Workflows.
+of `--spawn_strategy=local`, and add these flags to select the custom pool:
+
+```sh
+--remote_exec_header=x-buildbuddy-platform.Pool=linux-amd64-kvm
+--remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
+```
+
+The workflow also requires a workflows runner and the fork to be linked in
+BuildBuddy Workflows.
 Run `bb clean` first and add `--remote_accept_cached=false` when checking that
 an action actually reached an executor; an up-to-date or cached target does not
 prove that remote execution is available.

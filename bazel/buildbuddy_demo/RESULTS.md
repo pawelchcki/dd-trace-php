@@ -1,9 +1,9 @@
 # BuildBuddy demo measurements
 
-Measured on 2026-09-24. Each Bazel step duration is reported by BuildBuddy's
-child invocation. The workflow duration includes runner scheduling, checkout,
-snapshot handling, and cleanup. These probes are small; they do not predict the
-time to build the complete PHP release matrix.
+Measured on 2026-09-24 and 2026-09-25. Each Bazel step duration is reported by
+BuildBuddy's child invocation. The workflow duration includes runner scheduling,
+checkout, snapshot handling, and cleanup. The release runs cover one product
+and do not predict the time to build the complete PHP release matrix.
 
 | Workflow | First Bazel step | Replay | Whole workflow | Evidence |
 | --- | ---: | ---: | ---: | --- |
@@ -19,6 +19,7 @@ time to build the complete PHP release matrix.
 | PHP 8.5 release tracer, same-commit API rerun | 220.100s | 1.878s | 250.981s | [Invocation](https://pawel.buildbuddy.io/invocation/1e1f667d-0b6f-46e3-9d57-b11e37288ce5) |
 | PHP 8.5 release tracer, newest snapshot read policy | 261.742s | 2.660s | 296.632s | [Invocation](https://pawel.buildbuddy.io/invocation/300a8b2f-0c0a-4f82-bd9a-fea2d984cffb) |
 | PHP 8.5 release tracer, newest policy same-commit rerun | 256.627s | 2.998s | 290.931s | [Invocation](https://pawel.buildbuddy.io/invocation/509e0ef8-97fa-4fa9-a0b1-0d5665e34da7) |
+| PHP 8.5 release tracer, warm snapshot on next push | 1.341s | 0.757s | 9.214s | [Invocation](https://pawel.buildbuddy.io/invocation/b2356d2a-c3d1-42f6-9f21-385ca085a2e1) |
 
 The forced RBE probe disables action cache reads in its first step and specifies
 the custom executor pool. A direct client run of the same target reported one
@@ -45,7 +46,10 @@ the first Bazel step. Explicitly requesting the newest snapshot on reads did
 not change the result: the first run saved a remote VM snapshot, and the
 same-commit rerun used the same snapshot key but started with `git init` and
 re-analyzed all 58,169 targets. Both runs reported 1,089 remote cache hits.
-The execution metadata for the rerun has no `lastExecutedTask`, while the
-small demo's warm runs do. This points to a snapshot restore or eligibility
-problem for this larger runner, not an action-cache miss. The cause is not yet
-known.
+The execution metadata for the API rerun has no `lastExecutedTask`, so it did
+not resume a VM snapshot. The following push did resume from that API run's
+snapshot: its execution metadata names the preceding invocation, the checkout
+synced an existing repository, and Bazel loaded and configured zero targets.
+This made the full workflow 9.214s. Snapshot reuse can therefore make this
+release variant finish in seconds, but the earlier cold reruns show it is not
+yet reliable for every invocation. The reason those reruns missed is unknown.

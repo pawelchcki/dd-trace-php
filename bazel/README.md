@@ -314,6 +314,12 @@ archives, one per architecture/libc pair. Each contains the real loader DSO,
 split debug file, generated INI, SDK metadata, and version under the matching
 `linux-gnu/loader` or `linux-musl/loader` path. The archives depend on their
 loader ELF-check markers. They are package stages, not complete SSI archives.
+`//:dd_library_php_tracer_tarballs` builds four installer-compatible tracer
+archives from the canonical release matrix, with 33 glibc or 22 musl extension
+variants per architecture, `trace/src`, and `VERSION`. Each extension depends
+on its ELF check. The archive names include `tracer` because these Bazel
+packages do not contain profiling or AppSec. Pass one to `datadog-setup.php`
+with `--file`; the installer treats those other extensions as optional.
 `ssi_payload` and `deterministic_ssi_bundle` normalize directories to 0755,
 ordinary files to 0644, declared executables to 0755, and timestamps to the
 epoch. A complete SSI target still needs projection of the tracer products,

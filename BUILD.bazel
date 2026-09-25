@@ -1,4 +1,5 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel/packaging:tracer_installable.bzl", "tracer_installable_packages")
 load("//bazel/rust:defs.bzl", "ddtrace_rust_targets")
 load("//bazel/stages:unavailable.bzl", "unavailable_stage")
 
@@ -26,6 +27,8 @@ exports_files([
 ])
 
 ddtrace_rust_targets()
+
+tracer_installable_packages()
 
 cc_library(
     name = "tracer_native_headers",

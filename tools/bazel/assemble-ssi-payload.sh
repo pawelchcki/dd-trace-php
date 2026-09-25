@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-out= out_physical= version_file= required_paths= seen='|' executable_paths='|'
+out= out_physical= version_file= version_destination=version preserve_version=false required_paths= seen='|' executable_paths='|'
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --output)
@@ -14,13 +14,21 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         --version-file) version_file=$2; shift 2 ;;
+        --preserve-version) preserve_version=true; shift ;;
+        --version-destination)
+            version_destination=$2
+            case "$version_destination" in
+                ''|/*|*'..'*|*'//'*) echo "unsafe version destination: $version_destination" >&2; exit 2 ;;
+            esac
+            shift 2
+            ;;
         --copy)
             source=$2 destination=$3
             [ -n "$out_physical" ] || { echo "--output must precede --copy" >&2; exit 2; }
             case "$destination" in
                 /*|*'..'*|*'//'*) echo "unsafe SSI destination: $destination" >&2; exit 2 ;;
             esac
-            [ "$destination" != version ] || { echo "SSI version is written only from --version-file" >&2; exit 2; }
+            [ "$destination" != "$version_destination" ] || { echo "SSI version is written only from --version-file" >&2; exit 2; }
             # Bazel materializes a declared action input through an execroot
             # symlink. Follow only that command-line input: nested source
             # links remain forbidden, and the published tree is audited below.
@@ -70,16 +78,25 @@ done
 [ -n "$out" ] && [ -n "$out_physical" ] && [ -n "$version_file" ] && [ -r "$version_file" ]
 
 IFS= read -r version < "$version_file" || true
-case "$version" in
-    *+*) version="${version%%+*}-${version#*+}" ;;
-esac
+if [ "$preserve_version" = false ]; then
+    case "$version" in
+        *+*) version="${version%%+*}-${version#*+}" ;;
+    esac
+fi
 case "$version" in
     ''|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+-]*)
         echo "invalid SSI version" >&2
         exit 2
         ;;
 esac
-printf '%s\n' "$version" > "$out/version"
+version_parent=${version_destination%/*}
+[ "$version_parent" = "$version_destination" ] && version_parent=.
+mkdir -p "$out/$version_parent"
+[ ! -e "$out/$version_destination" ] && [ ! -L "$out/$version_destination" ] || {
+    echo "version destination already exists: $version_destination" >&2
+    exit 2
+}
+printf '%s\n' "$version" > "$out/$version_destination"
 for required in $required_paths; do
     [ ! -L "$out/$required" ] && [ -e "$out/$required" ] || {
         echo "SSI payload required path was not assembled safely: $required" >&2

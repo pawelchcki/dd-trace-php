@@ -11,6 +11,7 @@ exports_files([
     "bundle.bzl",
     "layout.bzl",
     "manifest_artifacts.bzl",
+    "tracer_installable.bzl",
 ])
 
 product_artifact_fixture(
@@ -64,7 +65,10 @@ product_artifact(
 ssi_payload(
     name = "fixture_payload",
     srcs = {"testdata/fixture-loader.bin": "fixture/loader.bin"},
-    required_paths = ["fixture/loader.bin", "version"],
+    required_paths = [
+        "fixture/loader.bin",
+        "version",
+    ],
     tags = ["manual"],
     version = "testdata/version",
 )
@@ -72,7 +76,10 @@ ssi_payload(
 ssi_payload(
     name = "fixture_projected_payload",
     srcs = {":fixture_manifest_product_binary": "fixture/projected.bin"},
-    required_paths = ["fixture/projected.bin", "version"],
+    required_paths = [
+        "fixture/projected.bin",
+        "version",
+    ],
     tags = ["manual"],
     version = "testdata/version",
 )

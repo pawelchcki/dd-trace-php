@@ -108,6 +108,7 @@ actions:
           //:rust_datadog_php_shared_amd64_musl
           //:rust_datadog_php_shared_arm64_glibc
           //:rust_datadog_php_shared_arm64_musl
+          //:dd_library_php_tracer_tarballs
           --config=remote-hermetic-amd64
           --remote_executor=grpcs://remote.buildbuddy.io
           --remote_cache=grpcs://remote.buildbuddy.io
@@ -125,6 +126,7 @@ actions:
           //:rust_datadog_php_shared_amd64_musl
           //:rust_datadog_php_shared_arm64_glibc
           //:rust_datadog_php_shared_arm64_musl
+          //:dd_library_php_tracer_tarballs
           --config=remote-hermetic-amd64
           --remote_executor=grpcs://remote.buildbuddy.io
           --remote_cache=grpcs://remote.buildbuddy.io
@@ -134,3 +136,5 @@ actions:
           --remote_local_fallback=false
           --remote_download_outputs=toplevel
           --jobs=25
+      - run: python3 tools/bazel/collect_buildbuddy_tarballs.py
+      - run: python3 tools/bazel/buildbuddy_matrix_samples.py

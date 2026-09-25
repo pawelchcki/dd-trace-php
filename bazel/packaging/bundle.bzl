@@ -52,6 +52,9 @@ def _ssi_payload_impl(ctx):
     args.add(ctx.file._runner.path)
     args.add("--output", out.path)
     args.add("--version-file", ctx.file.version.path)
+    args.add("--version-destination", ctx.attr.version_destination)
+    if ctx.attr.preserve_version:
+        args.add("--preserve-version")
     sources_by_destination = {}
     projection_validation = []
     for target, destination in ctx.attr.srcs.items():
@@ -102,6 +105,8 @@ ssi_payload = rule(
         "required_paths": attr.string_list(mandatory = True),
         "executable_paths": attr.string_list(),
         "version": attr.label(allow_single_file = True, mandatory = True),
+        "version_destination": attr.string(default = "version"),
+        "preserve_version": attr.bool(default = False),
         "_runner": attr.label(default = "//tools/bazel:assemble-ssi-payload.sh", allow_single_file = True),
     },
     toolchains = ["//bazel/toolchains:hermetic_tools_type"],

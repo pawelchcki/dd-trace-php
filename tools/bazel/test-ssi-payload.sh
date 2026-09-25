@@ -24,6 +24,18 @@ touch -d @135 "$tmp/src" "$tmp/src/lib" "$tmp/src/lib/tool"
 [ "$(stat -c %a "$tmp/out/version")" = 644 ]
 [ "$(stat -c %Y "$tmp/out/payload/lib/tool")" = 0 ]
 [ "$(stat -c %Y "$tmp/out/version")" = 0 ]
+"$assembler" --output "$tmp/installable" --version-file "$tmp/version" \
+    --version-destination VERSION --preserve-version \
+    --copy "$tmp/src/lib/tool" trace/ext/123/ddtrace.so \
+    --require VERSION --require trace/ext/123/ddtrace.so
+[ "$(cat "$tmp/installable/VERSION")" = '1.2.3+build.7' ]
+[ ! -e "$tmp/installable/version" ]
+[ "$(cat "$tmp/installable/trace/ext/123/ddtrace.so")" = loader ]
+"$tar_runner" --tar "$tar_bin" --root "$tmp/installable" --output "$tmp/installable.tar.gz" --prefix dd-library-php
+mkdir -p "$tmp/installable-extracted"
+tar -xzf "$tmp/installable.tar.gz" -C "$tmp/installable-extracted"
+[ "$(cat "$tmp/installable-extracted/dd-library-php/VERSION")" = '1.2.3+build.7' ]
+[ "$(cat "$tmp/installable-extracted/dd-library-php/trace/ext/123/ddtrace.so")" = loader ]
 "$tar_runner" --tar "$tar_bin" --root "$tmp/out" --output "$tmp/one.tar.gz" --prefix fixture --executable payload/lib/tool
 "$tar_runner" --tar "$tar_bin" --root "$tmp/out" --output "$tmp/two.tar.gz" --prefix fixture --executable payload/lib/tool
 cmp "$tmp/one.tar.gz" "$tmp/two.tar.gz"

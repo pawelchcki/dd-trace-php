@@ -83,3 +83,54 @@ actions:
           --remote_local_fallback=false
           --remote_download_outputs=toplevel
           --jobs=8
+  - name: "Full tracer matrix RBE"
+    triggers:
+      push:
+        branches:
+          - "bazel-buildbuddy-matrix-demo"
+    container_image: "ubuntu-22.04"
+    resource_requests:
+      cpu: 8
+      memory: "16GB"
+      disk: "80GB"
+    platform_properties:
+      remote-snapshot-save-policy: first-non-default-ref
+      snapshot-read-policy: newest
+    env:
+      GIT_REPO_DEFAULT_BRANCH: master
+    timeout: "6h"
+    steps:
+      - run: >-
+          bazel build
+          //bazel/products/tracer:ddtrace_fat_all
+          //bazel/php:product_matrix
+          //:rust_datadog_php_shared_amd64_glibc
+          //:rust_datadog_php_shared_amd64_musl
+          //:rust_datadog_php_shared_arm64_glibc
+          //:rust_datadog_php_shared_arm64_musl
+          --config=remote-hermetic-amd64
+          --remote_executor=grpcs://remote.buildbuddy.io
+          --remote_cache=grpcs://remote.buildbuddy.io
+          --remote_instance_name=
+          --remote_exec_header=x-buildbuddy-platform.Pool=linux-amd64-kvm
+          --remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
+          --remote_local_fallback=false
+          --remote_download_outputs=toplevel
+          --jobs=25
+      - run: >-
+          bazel build
+          //bazel/products/tracer:ddtrace_fat_all
+          //bazel/php:product_matrix
+          //:rust_datadog_php_shared_amd64_glibc
+          //:rust_datadog_php_shared_amd64_musl
+          //:rust_datadog_php_shared_arm64_glibc
+          //:rust_datadog_php_shared_arm64_musl
+          --config=remote-hermetic-amd64
+          --remote_executor=grpcs://remote.buildbuddy.io
+          --remote_cache=grpcs://remote.buildbuddy.io
+          --remote_instance_name=
+          --remote_exec_header=x-buildbuddy-platform.Pool=linux-amd64-kvm
+          --remote_exec_header=x-buildbuddy-platform.use-self-hosted-executors=true
+          --remote_local_fallback=false
+          --remote_download_outputs=toplevel
+          --jobs=25

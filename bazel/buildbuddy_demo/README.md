@@ -16,6 +16,14 @@ matrix contains many more variants. It requests a branch VM snapshot and the
 newest available snapshot on later runs, so the runner can attempt to preserve
 the Bazel analysis cache and repository downloads across workflows.
 
+The `Full tracer matrix RBE` action builds every Bazel tracer product and check,
+the PHP product matrix, four standalone Rust libraries, and four installable
+tracer tarballs for amd64/arm64 and glibc/musl. It replays the same targets,
+uploads the validated tarballs as workflow artifacts, and times three full
+builds after one temporary C source edit and three after one temporary Rust
+source edit. Both edits are restored before the workflow completes. The archives
+contain the tracer installer layout; profiler and AppSec are outside this action.
+
 Measured runs and invocation links are in [RESULTS.md](RESULTS.md).
 
 After `bb login`, a local client can test the action cache with:
